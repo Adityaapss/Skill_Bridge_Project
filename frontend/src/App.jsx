@@ -8,11 +8,11 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import MySkills from './pages/MySkills';
 import MyGaps from './pages/MyGaps';
-import Recommendations from './pages/Recommendations';
 import TeamMatrix from './pages/TeamMatrix';
 import RolesProjects from './pages/RolesProjects';
 import SkillCatalog from './pages/SkillCatalog';
 import LearningResources from './pages/LearningResources';
+import EmployeeManagement from './pages/EmployeeManagement';
 
 const theme = createTheme({
   palette: {
@@ -45,11 +45,12 @@ function App() {
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="my-skills" element={<MySkills />} />
               <Route path="my-gaps" element={<MyGaps />} />
-              <Route path="recommendations" element={<Recommendations />} />
+
               <Route path="team-matrix" element={<TeamMatrix />} />
               <Route path="roles-projects" element={<RolesProjects />} />
               <Route path="skill-catalog" element={<SkillCatalog />} />
               <Route path="learning-resources" element={<LearningResources />} />
+              <Route path="employee-management" element={<EmployeeManagement />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Routes>

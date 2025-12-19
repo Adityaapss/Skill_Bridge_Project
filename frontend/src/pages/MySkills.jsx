@@ -98,7 +98,11 @@ const MySkills = () => {
             if (editingSkill) {
                 await employeeSkillsAPI.update(user.id, editingSkill.skillId, formData);
             } else {
-                await employeeSkillsAPI.add(user.id, formData);
+                await employeeSkillsAPI.add(user.id, {
+                    ...formData,
+                    source: 'SELF_REPORTED',
+                    lastUsedDate: new Date().toISOString().split('T')[0]
+                });
             }
             fetchSkills();
             handleCloseDialog();
@@ -138,72 +142,243 @@ const MySkills = () => {
         );
     }
 
+    // Group skills by category
+    const skillsByCategory = skills.reduce((acc, skill) => {
+        const category = skill.skillCategory || 'Other';
+        if (!acc[category]) acc[category] = [];
+        acc[category].push(skill);
+        return acc;
+    }, {});
+
+    // Calculate statistics
+    const totalSkills = skills.length;
+    const approvedSkills = skills.filter(s => s.approvalStatus === 'APPROVED').length;
+    const pendingSkills = skills.filter(s => s.approvalStatus === 'PENDING').length;
+    const avgExperience = skills.length > 0
+        ? (skills.reduce((sum, s) => sum + (s.yearsExperience || 0), 0) / skills.length).toFixed(1)
+        : 0;
+
+    if (loading) {
+        return (
+            <Container>
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+                    <CircularProgress />
+                </Box>
+            </Container>
+        );
+    }
+
     return (
-        <Container maxWidth="lg">
-            <Paper sx={{ p: 3 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                    <Typography variant="h5">My Skills</Typography>
+        <Container maxWidth="xl">
+            {/* Modern Header */}
+            <Paper
+                elevation={3}
+                sx={{
+                    p: 4,
+                    mb: 4,
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    borderRadius: 2,
+                }}
+            >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Box>
+                        <Typography variant="h3" gutterBottom fontWeight="bold">
+                            🎯 My Skills
+                        </Typography>
+                        <Typography variant="h6" sx={{ opacity: 0.9 }}>
+                            Track and showcase your professional expertise
+                        </Typography>
+                    </Box>
                     <Button
                         variant="contained"
+                        size="large"
                         startIcon={<Add />}
                         onClick={() => handleOpenDialog()}
+                        sx={{
+                            bgcolor: 'white',
+                            color: 'primary.main',
+                            fontWeight: 'bold',
+                            '&:hover': {
+                                bgcolor: 'grey.100',
+                            },
+                        }}
                     >
                         Add Skill
                     </Button>
                 </Box>
+            </Paper>
 
-                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+            {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
-                <TableContainer>
-                    <Table>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell>Skill</TableCell>
-                                <TableCell>Category</TableCell>
-                                <TableCell>Proficiency</TableCell>
-                                <TableCell>Interest</TableCell>
-                                <TableCell>Experience (Years)</TableCell>
-                                <TableCell>Actions</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {skills.length === 0 ? (
-                                <TableRow>
-                                    <TableCell colSpan={6} align="center">
-                                        No skills added yet. Click "Add Skill" to get started!
-                                    </TableCell>
-                                </TableRow>
-                            ) : (
-                                skills.map((skill) => (
-                                    <TableRow key={skill.id}>
-                                        <TableCell>{skill.skillName}</TableCell>
-                                        <TableCell>{skill.skillCategory}</TableCell>
-                                        <TableCell>
+            {/* Statistics Dashboard */}
+            <Box sx={{ display: 'flex', gap: 2, mb: 4, flexWrap: 'wrap' }}>
+                <Paper elevation={2} sx={{ flex: 1, minWidth: 200, p: 3, bgcolor: 'primary.main', color: 'white' }}>
+                    <Typography variant="h3" fontWeight="bold">{totalSkills}</Typography>
+                    <Typography variant="body1">Total Skills</Typography>
+                </Paper>
+                <Paper elevation={2} sx={{ flex: 1, minWidth: 200, p: 3, bgcolor: 'success.main', color: 'white' }}>
+                    <Typography variant="h3" fontWeight="bold">{approvedSkills}</Typography>
+                    <Typography variant="body1">Approved</Typography>
+                </Paper>
+                <Paper elevation={2} sx={{ flex: 1, minWidth: 200, p: 3, bgcolor: 'warning.main', color: 'white' }}>
+                    <Typography variant="h3" fontWeight="bold">{pendingSkills}</Typography>
+                    <Typography variant="body1">Pending Approval</Typography>
+                </Paper>
+                <Paper elevation={2} sx={{ flex: 1, minWidth: 200, p: 3, bgcolor: 'info.main', color: 'white' }}>
+                    <Typography variant="h3" fontWeight="bold">{avgExperience}</Typography>
+                    <Typography variant="body1">Avg. Years Experience</Typography>
+                </Paper>
+            </Box>
+
+            {/* Skills by Category */}
+            {skills.length === 0 ? (
+                <Paper sx={{ p: 6, textAlign: 'center', bgcolor: 'grey.50' }}>
+                    <Typography variant="h5" color="text.secondary" gutterBottom>
+                        No skills added yet
+                    </Typography>
+                    <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+                        Start building your skill profile by adding your first skill!
+                    </Typography>
+                    <Button
+                        variant="contained"
+                        size="large"
+                        startIcon={<Add />}
+                        onClick={() => handleOpenDialog()}
+                    >
+                        Add Your First Skill
+                    </Button>
+                </Paper>
+            ) : (
+                Object.entries(skillsByCategory).map(([category, categorySkills]) => (
+                    <Box key={category} sx={{ mb: 4 }}>
+                        <Typography variant="h5" gutterBottom fontWeight="bold" color="primary.dark" sx={{ mb: 2 }}>
+                            {category} ({categorySkills.length})
+                        </Typography>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 2 }}>
+                            {categorySkills.map((skill) => (
+                                <Paper
+                                    key={skill.id}
+                                    elevation={3}
+                                    sx={{
+                                        p: 3,
+                                        transition: 'transform 0.2s, box-shadow 0.2s',
+                                        '&:hover': {
+                                            transform: 'translateY(-4px)',
+                                            boxShadow: 6,
+                                        },
+                                    }}
+                                >
+                                    {/* Skill Header */}
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
+                                        <Box sx={{ flex: 1 }}>
+                                            <Typography variant="h6" fontWeight="bold" gutterBottom>
+                                                {skill.skillName}
+                                            </Typography>
+                                            {/* Approval Status */}
+                                            {skill.approvalStatus === 'APPROVED' && (
+                                                <Chip
+                                                    label="✓ Approved"
+                                                    color="success"
+                                                    size="small"
+                                                    sx={{ fontWeight: 'bold' }}
+                                                />
+                                            )}
+                                            {skill.approvalStatus === 'PENDING' && (
+                                                <Chip
+                                                    label="⏳ Pending"
+                                                    color="warning"
+                                                    size="small"
+                                                    sx={{ fontWeight: 'bold' }}
+                                                />
+                                            )}
+                                            {skill.approvalStatus === 'REJECTED' && (
+                                                <Chip
+                                                    label="✗ Rejected"
+                                                    color="error"
+                                                    size="small"
+                                                    sx={{ fontWeight: 'bold' }}
+                                                />
+                                            )}
+                                        </Box>
+                                        <Box>
+                                            <IconButton size="small" onClick={() => handleOpenDialog(skill)} color="primary">
+                                                <Edit />
+                                            </IconButton>
+                                            <IconButton size="small" onClick={() => handleDelete(skill.skillId)} color="error">
+                                                <Delete />
+                                            </IconButton>
+                                        </Box>
+                                    </Box>
+
+                                    {/* Rejection Reason */}
+                                    {skill.approvalStatus === 'REJECTED' && skill.rejectionReason && (
+                                        <Alert severity="error" sx={{ mb: 2, py: 0.5 }}>
+                                            <Typography variant="caption">
+                                                <strong>Reason:</strong> {skill.rejectionReason}
+                                            </Typography>
+                                        </Alert>
+                                    )}
+
+                                    {/* Proficiency Level with Progress Bar */}
+                                    <Box sx={{ mb: 2 }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                                            <Typography variant="body2" fontWeight="medium">
+                                                Proficiency
+                                            </Typography>
                                             <Chip
                                                 label={getProficiencyLabel(skill.proficiencyLevel)}
                                                 color={getProficiencyColor(skill.proficiencyLevel)}
                                                 size="small"
                                             />
-                                        </TableCell>
-                                        <TableCell>
-                                            <Rating value={skill.interestLevel} max={3} readOnly size="small" />
-                                        </TableCell>
-                                        <TableCell>{skill.yearsExperience || 0}</TableCell>
-                                        <TableCell>
-                                            <IconButton size="small" onClick={() => handleOpenDialog(skill)}>
-                                                <Edit />
-                                            </IconButton>
-                                            <IconButton size="small" onClick={() => handleDelete(skill.skillId)}>
-                                                <Delete />
-                                            </IconButton>
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            )}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
-            </Paper>
+                                        </Box>
+                                        <Box
+                                            sx={{
+                                                width: '100%',
+                                                height: 8,
+                                                bgcolor: 'grey.200',
+                                                borderRadius: 1,
+                                                overflow: 'hidden',
+                                            }}
+                                        >
+                                            <Box
+                                                sx={{
+                                                    width: `${(skill.proficiencyLevel / 3) * 100}%`,
+                                                    height: '100%',
+                                                    bgcolor: skill.proficiencyLevel === 3 ? 'success.main' :
+                                                        skill.proficiencyLevel === 2 ? 'warning.main' : 'error.main',
+                                                    transition: 'width 0.3s',
+                                                }}
+                                            />
+                                        </Box>
+                                    </Box>
+
+                                    {/* Interest Level */}
+                                    <Box sx={{ mb: 2 }}>
+                                        <Typography variant="body2" fontWeight="medium" gutterBottom>
+                                            Interest Level
+                                        </Typography>
+                                        <Rating value={skill.interestLevel} max={3} readOnly size="medium" />
+                                    </Box>
+
+                                    {/* Years of Experience */}
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Typography variant="body2" color="text.secondary">
+                                            Experience:
+                                        </Typography>
+                                        <Chip
+                                            label={`${skill.yearsExperience || 0} years`}
+                                            size="small"
+                                            variant="outlined"
+                                            color="primary"
+                                        />
+                                    </Box>
+                                </Paper>
+                            ))}
+                        </Box>
+                    </Box>
+                ))
+            )}
 
             <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
                 <DialogTitle>{editingSkill ? 'Edit Skill' : 'Add Skill'}</DialogTitle>
@@ -226,6 +401,7 @@ const MySkills = () => {
                                 ))}
                             </TextField>
                         )}
+
                         <TextField
                             select
                             fullWidth
@@ -233,27 +409,22 @@ const MySkills = () => {
                             value={formData.proficiencyLevel}
                             onChange={(e) => setFormData({ ...formData, proficiencyLevel: parseInt(e.target.value) })}
                             margin="normal"
-                            required
                         >
                             <MenuItem value={0}>None</MenuItem>
                             <MenuItem value={1}>Beginner</MenuItem>
                             <MenuItem value={2}>Intermediate</MenuItem>
                             <MenuItem value={3}>Advanced</MenuItem>
                         </TextField>
-                        <TextField
-                            select
-                            fullWidth
-                            label="Interest Level"
-                            value={formData.interestLevel}
-                            onChange={(e) => setFormData({ ...formData, interestLevel: parseInt(e.target.value) })}
-                            margin="normal"
-                            required
-                        >
-                            <MenuItem value={0}>None</MenuItem>
-                            <MenuItem value={1}>Low</MenuItem>
-                            <MenuItem value={2}>Medium</MenuItem>
-                            <MenuItem value={3}>High</MenuItem>
-                        </TextField>
+
+                        <Box sx={{ mt: 2 }}>
+                            <Typography gutterBottom>Interest Level</Typography>
+                            <Rating
+                                value={formData.interestLevel}
+                                max={3}
+                                onChange={(e, newValue) => setFormData({ ...formData, interestLevel: newValue || 1 })}
+                            />
+                        </Box>
+
                         <TextField
                             fullWidth
                             type="number"
@@ -267,7 +438,7 @@ const MySkills = () => {
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={handleCloseDialog}>Cancel</Button>
-                    <Button onClick={handleSubmit} variant="contained">
+                    <Button onClick={handleSubmit} variant="contained" disabled={!editingSkill && !formData.skillId}>
                         {editingSkill ? 'Update' : 'Add'}
                     </Button>
                 </DialogActions>

@@ -27,6 +27,13 @@ public class EmployeeSkillDTO {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
+    // Approval workflow fields
+    private String approvalStatus;
+    private Long approvedBy;
+    private String approvedByName;
+    private LocalDateTime approvedAt;
+    private String rejectionReason;
+
     public static EmployeeSkillDTO fromEntity(EmployeeSkill es, String skillName, String skillCategory) {
         return EmployeeSkillDTO.builder()
                 .id(es.getId())
@@ -39,6 +46,10 @@ public class EmployeeSkillDTO {
                 .yearsExperience(es.getYearsExperience())
                 .lastUsedDate(es.getLastUsedDate())
                 .source(es.getSource().name())
+                .approvalStatus(es.getApprovalStatus().name())
+                .approvedBy(es.getApprovedBy())
+                .approvedAt(es.getApprovedAt())
+                .rejectionReason(es.getRejectionReason())
                 .createdAt(es.getCreatedAt())
                 .updatedAt(es.getUpdatedAt())
                 .build();

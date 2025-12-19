@@ -27,6 +27,7 @@
 - **[CHECKLIST.md](./CHECKLIST.md)** - Development task tracker and progress
 - **[docs/IMPLEMENTATION_PLAN.md](./docs/IMPLEMENTATION_PLAN.md)** - 8-week development roadmap
 - **[docs/API.md](./docs/API.md)** - Complete API documentation (40+ endpoints)
+- **[docs/DATABASE.md](./docs/DATABASE.md)** - Complete database schema and seed data documentation
 
 ---
 
@@ -134,14 +135,14 @@ TeamProject/
 
 ### **Architecture & Design**
 - System architecture → [README.md](./README.md)
-- Database schema → [README.md](./README.md) + [HANDOFF.md](./HANDOFF.md)
+- Database schema → [docs/DATABASE.md](./docs/DATABASE.md) ⭐
 - API design → [docs/API.md](./docs/API.md)
 - Security model → [README.md](./README.md) + [HANDOFF.md](./HANDOFF.md)
 
 ### **Implementation Details**
 - Gap analysis algorithm → [HANDOFF.md](./HANDOFF.md)
 - Recommendation algorithm → [HANDOFF.md](./HANDOFF.md)
-- Seed data details → [QUICKSTART.md](./QUICKSTART.md)
+- Seed data details → [docs/DATABASE.md](./docs/DATABASE.md) ⭐
 - Test users → [HANDOFF.md](./HANDOFF.md) + [QUICKSTART.md](./QUICKSTART.md)
 
 ### **Development**
