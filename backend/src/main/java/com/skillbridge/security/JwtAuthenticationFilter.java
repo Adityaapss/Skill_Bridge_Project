@@ -44,9 +44,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+            UserDetails userDetails = null;
+            try {
+                userDetails = userDetailsService.loadUserByUsername(username);
+            } catch (org.springframework.security.core.userdetails.UsernameNotFoundException e) {
+                // Token for a deleted account: treat as unauthenticated rather than failing with a 500
+                logger.warn("JWT for unknown user: " + username);
+            }
 
-            if (jwtUtil.validateToken(jwt, userDetails)) {
+            if (userDetails != null && jwtUtil.validateToken(jwt, userDetails)) {
                 UsernamePasswordAuthenticationToken authenticationToken =
                         new UsernamePasswordAuthenticationToken(
                                 userDetails,

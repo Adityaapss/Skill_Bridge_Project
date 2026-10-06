@@ -1,3 +1,4 @@
+import { alpha } from '@mui/material/styles';
 import React, { useState, useEffect } from 'react';
 import {
     Container,
@@ -15,7 +16,6 @@ import {
     DialogContent,
     DialogActions,
     TextField,
-    CircularProgress,
     Alert,
     Tabs,
     Tab,
@@ -44,17 +44,16 @@ import {
     FilterList,
     ExpandMore,
 } from '@mui/icons-material';
-import { useAuth } from '../context/AuthContext';
+import { useUi } from '../context/UiContext';
+import PageSkeleton from '../components/PageSkeleton';
 import { projectsAPI, skillsAPI, employeesAPI, employeeSkillsAPI } from '../services/api';
 
 const RolesProjects = () => {
-    const { user } = useAuth();
+    const { toast, confirm } = useUi();
     const [tabValue, setTabValue] = useState(0);
     const [allSkills, setAllSkills] = useState([]);
     const [allEmployees, setAllEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
 
     // Ongoing Projects State
     const [ongoingProjects, setOngoingProjects] = useState([]);
@@ -161,7 +160,7 @@ const RolesProjects = () => {
                                 currentProject: assignedProjects.length > 0 ? assignedProjects[0].name : 'Not Assigned',
                                 projectCount: assignedProjects.length,
                             };
-                        } catch (err) {
+                        } catch {
                             return {
                                 ...emp,
                                 skills: [],
@@ -177,7 +176,7 @@ const RolesProjects = () => {
             }
 
         } catch (err) {
-            setError('Failed to load data');
+            toast.error('Failed to load data');
             console.error(err);
         } finally {
             setLoading(false);
@@ -250,7 +249,7 @@ const RolesProjects = () => {
 
     const handleAllocateResource = async () => {
         if (allocationData.selectedEmployees.length === 0) {
-            setError('Please select at least one employee');
+            toast.error('Please select at least one employee');
             return;
         }
 
@@ -261,34 +260,32 @@ const RolesProjects = () => {
                 await projectsAPI.assignEmployee(selectedProject.id, employee.id, allocationType);
             }
 
-            setSuccess('Resources allocated successfully!');
+            toast.success('Resources allocated successfully!');
             setOpenAllocateDialog(false);
 
             // Refresh ongoing projects
             const ongoingResponse = await projectsAPI.getOngoing();
             setOngoingProjects(ongoingResponse.data);
 
-            setTimeout(() => setSuccess(''), 3000);
         } catch (err) {
-            setError('Failed to allocate resources');
+            toast.error('Failed to allocate resources');
             console.error(err);
         }
     };
 
     const handleRemoveEmployee = async (projectId, employeeId) => {
-        if (window.confirm('Remove this employee from the project?')) {
+        if (await confirm({ title: 'Please confirm', message: 'Remove this employee from the project?', confirmText: 'Confirm', destructive: true })) {
             try {
                 await projectsAPI.unassignEmployee(projectId, employeeId);
 
-                setSuccess('Employee removed from project');
+                toast.success('Employee removed from project');
 
                 // Refresh ongoing projects
                 const ongoingResponse = await projectsAPI.getOngoing();
                 setOngoingProjects(ongoingResponse.data);
 
-                setTimeout(() => setSuccess(''), 3000);
             } catch (err) {
-                setError('Failed to remove employee');
+                toast.error('Failed to remove employee');
                 console.error(err);
             }
         }
@@ -318,7 +315,7 @@ const RolesProjects = () => {
 
     const handleSaveUpcoming = async () => {
         if (!upcomingFormData.name || !upcomingFormData.expectedStartDate) {
-            setError('Please fill in all required fields');
+            toast.error('Please fill in all required fields');
             return;
         }
 
@@ -326,11 +323,11 @@ const RolesProjects = () => {
             if (editingUpcoming) {
                 // Update existing
                 await projectsAPI.update(editingUpcoming.id, upcomingFormData);
-                setSuccess('Project updated successfully!');
+                toast.success('Project updated successfully!');
             } else {
                 // Add new
                 await projectsAPI.create(upcomingFormData);
-                setSuccess('Project added successfully!');
+                toast.success('Project added successfully!');
             }
 
             setOpenUpcomingDialog(false);
@@ -339,27 +336,25 @@ const RolesProjects = () => {
             const upcomingResponse = await projectsAPI.getUpcoming();
             setUpcomingProjects(upcomingResponse.data);
 
-            setTimeout(() => setSuccess(''), 3000);
         } catch (err) {
-            setError('Failed to save project');
+            toast.error('Failed to save project');
             console.error(err);
         }
     };
 
     const handleDeleteUpcoming = async (projectId) => {
-        if (window.confirm('Delete this upcoming project?')) {
+        if (await confirm({ title: 'Please confirm', message: 'Delete this upcoming project?', confirmText: 'Confirm', destructive: true })) {
             try {
                 await projectsAPI.delete(projectId);
 
-                setSuccess('Project deleted successfully');
+                toast.success('Project deleted successfully');
 
                 // Refresh upcoming projects
                 const upcomingResponse = await projectsAPI.getUpcoming();
                 setUpcomingProjects(upcomingResponse.data);
 
-                setTimeout(() => setSuccess(''), 3000);
             } catch (err) {
-                setError('Failed to delete project');
+                toast.error('Failed to delete project');
                 console.error(err);
             }
         }
@@ -375,7 +370,7 @@ const RolesProjects = () => {
 
     const handleStartProject = async () => {
         if (allocationData.selectedEmployees.length === 0) {
-            setError('Please allocate at least one employee before starting the project');
+            toast.error('Please allocate at least one employee before starting the project');
             return;
         }
 
@@ -388,7 +383,7 @@ const RolesProjects = () => {
                 allocationTypes
             });
 
-            setSuccess('Project started and moved to Ongoing Projects!');
+            toast.success('Project started and moved to Ongoing Projects!');
             setOpenAllocationDialog(false);
 
             // Refresh both ongoing and upcoming projects
@@ -398,9 +393,8 @@ const RolesProjects = () => {
             const upcomingResponse = await projectsAPI.getUpcoming();
             setUpcomingProjects(upcomingResponse.data);
 
-            setTimeout(() => setSuccess(''), 3000);
         } catch (err) {
-            setError('Failed to start project');
+            toast.error('Failed to start project');
             console.error(err);
         }
     };
@@ -409,11 +403,6 @@ const RolesProjects = () => {
     const getSkillName = (skillId) => {
         const skill = allSkills.find(s => s.id === skillId);
         return skill ? skill.name : 'Unknown';
-    };
-
-    const getProficiencyLabel = (level) => {
-        const labels = ['None', 'Beginner', 'Intermediate', 'Advanced'];
-        return labels[level] || '-';
     };
 
     const getBillableLabel = (status) => {
@@ -428,11 +417,7 @@ const RolesProjects = () => {
 
     if (loading) {
         return (
-            <Container>
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-                    <CircularProgress />
-                </Box>
-            </Container>
+            <PageSkeleton />
         );
     }
 
@@ -444,7 +429,7 @@ const RolesProjects = () => {
                 sx={{
                     p: 4,
                     mb: 4,
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    background: (t) => `linear-gradient(135deg, ${t.palette.primary.main} 0%, ${t.palette.secondary.main} 100%)`,
                     color: 'white',
                     borderRadius: 2,
                 }}
@@ -458,8 +443,6 @@ const RolesProjects = () => {
             </Paper>
 
             <Paper elevation={2} sx={{ p: 3 }}>
-                {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
-                {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>{success}</Alert>}
 
                 {/* Enhanced Tabs */}
                 <Box sx={{ borderBottom: 2, borderColor: 'primary.main', mb: 3 }}>
@@ -498,7 +481,7 @@ const RolesProjects = () => {
                 {tabValue === 0 && (
                     <Box>
                         <Box sx={{ mb: 3 }}>
-                            <Typography variant="h5" gutterBottom fontWeight="bold" color="primary.dark">
+                            <Typography variant="h5" gutterBottom fontWeight="bold" color="primary.main">
                                 🚀 Ongoing Projects
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
@@ -508,8 +491,8 @@ const RolesProjects = () => {
 
                         <Grid container spacing={3}>
                             {ongoingProjects.length === 0 ? (
-                                <Grid item xs={12}>
-                                    <Paper sx={{ p: 6, textAlign: 'center', bgcolor: 'grey.50' }}>
+                                <Grid size={{ xs: 12 }}>
+                                    <Paper sx={{ p: 6, textAlign: 'center', bgcolor: 'action.hover' }}>
                                         <Typography variant="h6" color="text.secondary" gutterBottom>
                                             No ongoing projects
                                         </Typography>
@@ -520,7 +503,7 @@ const RolesProjects = () => {
                                 </Grid>
                             ) : (
                                 ongoingProjects.map((project) => (
-                                    <Grid item xs={12} lg={6} key={project.id}>
+                                    <Grid key={project.id} size={{ xs: 12, lg: 6 }}>
                                         <Card
                                             elevation={3}
                                             sx={{
@@ -536,7 +519,7 @@ const RolesProjects = () => {
                                                 {/* Project Header */}
                                                 <Box sx={{ mb: 3 }}>
                                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                                                        <Typography variant="h5" fontWeight="bold" color="primary.dark">
+                                                        <Typography variant="h5" fontWeight="bold" color="primary.main">
                                                             {project.name}
                                                         </Typography>
                                                         <Chip
@@ -584,7 +567,7 @@ const RolesProjects = () => {
 
                                                 {/* Team Section - Collapsible */}
                                                 <Box sx={{
-                                                    bgcolor: 'grey.50',
+                                                    bgcolor: 'action.hover',
                                                     borderRadius: 1,
                                                     border: '1px solid',
                                                     borderColor: 'divider',
@@ -634,7 +617,7 @@ const RolesProjects = () => {
                                                                                 justifyContent: 'space-between',
                                                                                 p: 1.5,
                                                                                 mb: 1,
-                                                                                bgcolor: 'white',
+                                                                                bgcolor: 'background.paper',
                                                                                 borderRadius: 1,
                                                                                 border: '1px solid',
                                                                                 borderColor: 'divider',
@@ -683,7 +666,7 @@ const RolesProjects = () => {
                                                                                 color="error"
                                                                                 sx={{
                                                                                     '&:hover': {
-                                                                                        bgcolor: 'error.lighter',
+                                                                                        bgcolor: (t) => alpha(t.palette.error.main, 0.12),
                                                                                     }
                                                                                 }}
                                                                             >
@@ -704,7 +687,7 @@ const RolesProjects = () => {
 
                                             <Divider />
 
-                                            <CardActions sx={{ p: 2, bgcolor: 'grey.50' }}>
+                                            <CardActions sx={{ p: 2, bgcolor: 'action.hover' }}>
                                                 <Button
                                                     variant="contained"
                                                     size="small"
@@ -747,7 +730,7 @@ const RolesProjects = () => {
 
                         <Grid container spacing={3}>
                             {upcomingProjects.length === 0 ? (
-                                <Grid item xs={12}>
+                                <Grid size={{ xs: 12 }}>
                                     <Paper sx={{ p: 4, textAlign: 'center' }}>
                                         <Typography variant="h6" color="text.secondary">
                                             No upcoming projects
@@ -759,7 +742,7 @@ const RolesProjects = () => {
                                 </Grid>
                             ) : (
                                 upcomingProjects.map((project) => (
-                                    <Grid item xs={12} md={6} key={project.id}>
+                                    <Grid key={project.id} size={{ xs: 12, md: 6 }}>
                                         <Card elevation={3}>
                                             <CardContent>
                                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
@@ -820,7 +803,7 @@ const RolesProjects = () => {
 
                         <Grid container spacing={3}>
                             {upcomingProjects.length === 0 ? (
-                                <Grid item xs={12}>
+                                <Grid size={{ xs: 12 }}>
                                     <Paper sx={{ p: 4, textAlign: 'center' }}>
                                         <Typography variant="h6" color="text.secondary">
                                             No projects available for allocation
@@ -832,8 +815,8 @@ const RolesProjects = () => {
                                 </Grid>
                             ) : (
                                 upcomingProjects.map((project) => (
-                                    <Grid item xs={12} md={6} key={project.id}>
-                                        <Card elevation={3} sx={{ bgcolor: 'info.lighter' }}>
+                                    <Grid key={project.id} size={{ xs: 12, md: 6 }}>
+                                        <Card elevation={3} sx={{ bgcolor: (t) => alpha(t.palette.info.main, 0.12) }}>
                                             <CardContent>
                                                 <Typography variant="h6" fontWeight="bold" gutterBottom>
                                                     {project.name}
@@ -890,7 +873,7 @@ const RolesProjects = () => {
                 <DialogContent>
                     <Box sx={{ pt: 2 }}>
                         {/* Filter Section */}
-                        <Paper elevation={0} sx={{ p: 2, mb: 3, bgcolor: 'grey.50', borderRadius: 2 }}>
+                        <Paper elevation={0} sx={{ p: 2, mb: 3, bgcolor: 'action.hover', borderRadius: 2 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                                 <FilterList sx={{ mr: 1, color: 'primary.main' }} />
                                 <Typography variant="subtitle1" fontWeight="bold">
@@ -900,7 +883,7 @@ const RolesProjects = () => {
 
                             <Grid container spacing={2}>
                                 {/* Search Bar */}
-                                <Grid item xs={12} md={6}>
+                                <Grid size={{ xs: 12, md: 6 }}>
                                     <TextField
                                         fullWidth
                                         size="small"
@@ -915,7 +898,7 @@ const RolesProjects = () => {
                                 </Grid>
 
                                 {/* Skills Filter */}
-                                <Grid item xs={12} md={6}>
+                                <Grid size={{ xs: 12, md: 6 }}>
                                     <Autocomplete
                                         multiple
                                         size="small"
@@ -944,7 +927,7 @@ const RolesProjects = () => {
                                 </Grid>
 
                                 {/* Department Filter */}
-                                <Grid item xs={12} sm={4}>
+                                <Grid size={{ xs: 12, sm: 4 }}>
                                     <TextField
                                         select
                                         fullWidth
@@ -962,7 +945,7 @@ const RolesProjects = () => {
                                 </Grid>
 
                                 {/* Availability Filter */}
-                                <Grid item xs={12} sm={4}>
+                                <Grid size={{ xs: 12, sm: 4 }}>
                                     <TextField
                                         select
                                         fullWidth
@@ -980,7 +963,7 @@ const RolesProjects = () => {
                                 </Grid>
 
                                 {/* Allocation Type Filter */}
-                                <Grid item xs={12} sm={4}>
+                                <Grid size={{ xs: 12, sm: 4 }}>
                                     <TextField
                                         select
                                         fullWidth
@@ -1247,7 +1230,7 @@ const RolesProjects = () => {
                 <DialogContent>
                     <Box sx={{ pt: 2 }}>
                         {/* Filter Section */}
-                        <Paper elevation={0} sx={{ p: 2, mb: 3, bgcolor: 'grey.50', borderRadius: 2 }}>
+                        <Paper elevation={0} sx={{ p: 2, mb: 3, bgcolor: 'action.hover', borderRadius: 2 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                                 <FilterList sx={{ mr: 1, color: 'primary.main' }} />
                                 <Typography variant="subtitle1" fontWeight="bold">
@@ -1257,7 +1240,7 @@ const RolesProjects = () => {
 
                             <Grid container spacing={2}>
                                 {/* Search Bar */}
-                                <Grid item xs={12} md={6}>
+                                <Grid size={{ xs: 12, md: 6 }}>
                                     <TextField
                                         fullWidth
                                         size="small"
@@ -1272,7 +1255,7 @@ const RolesProjects = () => {
                                 </Grid>
 
                                 {/* Skills Filter */}
-                                <Grid item xs={12} md={6}>
+                                <Grid size={{ xs: 12, md: 6 }}>
                                     <Autocomplete
                                         multiple
                                         size="small"
@@ -1301,7 +1284,7 @@ const RolesProjects = () => {
                                 </Grid>
 
                                 {/* Department Filter */}
-                                <Grid item xs={12} sm={4}>
+                                <Grid size={{ xs: 12, sm: 4 }}>
                                     <TextField
                                         select
                                         fullWidth
@@ -1319,7 +1302,7 @@ const RolesProjects = () => {
                                 </Grid>
 
                                 {/* Availability Filter */}
-                                <Grid item xs={12} sm={4}>
+                                <Grid size={{ xs: 12, sm: 4 }}>
                                     <TextField
                                         select
                                         fullWidth
@@ -1337,7 +1320,7 @@ const RolesProjects = () => {
                                 </Grid>
 
                                 {/* Allocation Type Filter */}
-                                <Grid item xs={12} sm={4}>
+                                <Grid size={{ xs: 12, sm: 4 }}>
                                     <TextField
                                         select
                                         fullWidth

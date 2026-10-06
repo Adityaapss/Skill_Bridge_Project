@@ -4,6 +4,34 @@
 
 SkillBridge is an internal web application designed to help organizations manage employee skills, identify skill gaps, and recommend targeted learning resources. It serves three primary user groups: Employees, Managers, and HR Admins.
 
+## 🚀 Running locally
+
+```bash
+# Option A: everything in Docker (Postgres + backend + frontend on http://localhost:8081)
+cp .env.example .env        # set JWT_SECRET (openssl rand -hex 32) and DB_PASSWORD
+docker compose up --build
+
+# Option B: run the pieces yourself (Postgres must be running with a `skillbridge` database)
+cd backend  && mvn spring-boot:run      # http://localhost:8080/api  (Swagger: /api/swagger-ui.html)
+cd frontend && npm install && npm run dev   # http://localhost:5173
+```
+
+Backend settings are environment variables with local-friendly defaults: `DB_URL`, `DB_USERNAME`,
+`DB_PASSWORD`, `JWT_SECRET`, `CORS_ORIGINS`, `SEED_DATA` (demo accounts; set `false` outside local dev),
+`SHOW_SQL`, `SWAGGER_ENABLED`. Tests: `cd backend && mvn test` (in-memory H2) and `cd frontend && npm test`.
+
+## ✨ Recent additions
+
+- **Security:** the acting user always comes from the JWT (no more `managerId`/`employeeId` trust),
+  employees can only read/edit their own profile, only a skill's manager (or HR) can approve it, level
+  changes to approved skills need re-approval, passwords are never serialised, login is rate-limited,
+  unauthenticated calls get 401, and gap analysis counts approved skills only.
+- **Employees:** skill history timeline, peer endorsements, certifications with expiry warnings,
+  learning-progress tracking, career paths with a skill radar, change password.
+- **Managers:** team heatmap, staffing suggestions (best fit by match score and workload), CSV export.
+- **HR:** organisation insights (coverage, bus factor, demand vs supply), CSV employee import.
+- **Everyone:** in-app notifications, dark mode, ⌘K / Ctrl+K navigation, responsive layout.
+
 ## 🏗️ Architecture
 
 ### High-Level Architecture

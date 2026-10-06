@@ -1,0 +1,50 @@
+# One-command local stack:  docker compose up --build
+#   frontend  http://localhost:8081      backend  http://localhost:8080/api
+# Copy .env.example to .env to override the defaults below.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: skillbridge
+      POSTGRES_USER: ${DB_USERNAME:-skillbridge}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-skillbridge}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-skillbridge} -d skillbridge"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/skillbridge
+      DB_USERNAME: ${DB_USERNAME:-skillbridge}
+      DB_PASSWORD: ${DB_PASSWORD:-skillbridge}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (32+ characters)}
+      CORS_ORIGINS: http://localhost:8081
+      SEED_DATA: ${SEED_DATA:-true}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /api
+    depends_on:
+      - backend
+    ports:
+      - "8081:80"
+
+volumes:
+  dbdata:

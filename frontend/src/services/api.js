@@ -38,6 +38,8 @@ api.interceptors.response.use(
 export const authAPI = {
     login: (credentials) => api.post('/auth/login', credentials),
     getCurrentUser: () => api.get('/auth/me'),
+    changePassword: (currentPassword, newPassword) =>
+        api.post('/auth/change-password', { currentPassword, newPassword }),
 };
 
 // Skills API
@@ -59,6 +61,12 @@ export const employeesAPI = {
     update: (id, data) => api.put(`/employees/${id}`, data),
     delete: (id) => api.delete(`/employees/${id}`),
     getDashboard: (id) => api.get(`/employees/${id}/dashboard`),
+    exportSkillMatrix: () => api.get('/employees/export/skill-matrix', { responseType: 'blob' }),
+    importCsv: (file) => {
+        const form = new FormData();
+        form.append('file', file);
+        return api.post('/employees/import', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+    },
 };
 
 // Employee Skills API
@@ -67,10 +75,43 @@ export const employeeSkillsAPI = {
     add: (employeeId, data) => api.post(`/employees/${employeeId}/skills`, data),
     update: (employeeId, skillId, data) => api.put(`/employees/${employeeId}/skills/${skillId}`, data),
     delete: (employeeId, skillId) => api.delete(`/employees/${employeeId}/skills/${skillId}`),
-    // Approval workflow
-    getPendingForManager: (managerId) => api.get(`/employees/0/skills/pending/manager/${managerId}`),
-    approve: (skillId, managerId) => api.post(`/employees/0/skills/${skillId}/approve`, { managerId }),
-    reject: (skillId, managerId, rejectionReason) => api.post(`/employees/0/skills/${skillId}/reject`, { managerId, rejectionReason }),
+    getHistory: (employeeId) => api.get(`/employees/${employeeId}/skills/history`),
+    // Approval workflow: the server identifies the approver from the JWT
+    getPendingForManager: () => api.get('/employees/0/skills/pending'),
+    approve: (skillId) => api.post(`/employees/0/skills/${skillId}/approve`, {}),
+    reject: (skillId, rejectionReason) => api.post(`/employees/0/skills/${skillId}/reject`, { rejectionReason }),
+};
+
+// Notifications API
+export const notificationsAPI = {
+    list: () => api.get('/notifications'),
+    unreadCount: () => api.get('/notifications/unread-count'),
+    markRead: (id) => api.post(`/notifications/${id}/read`),
+    markAllRead: () => api.post('/notifications/read-all'),
+};
+
+// Learning progress API
+export const learningProgressAPI = {
+    mine: () => api.get('/learning-progress/me'),
+    forEmployee: (employeeId) => api.get(`/learning-progress/employee/${employeeId}`),
+    start: (resourceId) => api.post(`/learning-progress/${resourceId}/start`),
+    complete: (resourceId) => api.post(`/learning-progress/${resourceId}/complete`),
+    remove: (resourceId) => api.delete(`/learning-progress/${resourceId}`),
+};
+
+// Endorsements API
+export const endorsementsAPI = {
+    forEmployee: (employeeId) => api.get(`/employees/${employeeId}/endorsements`),
+    endorse: (employeeSkillId, comment) => api.post(`/employee-skills/${employeeSkillId}/endorse`, { comment }),
+    remove: (employeeSkillId) => api.delete(`/employee-skills/${employeeSkillId}/endorse`),
+};
+
+// Certifications API
+export const certificationsAPI = {
+    forEmployee: (employeeId) => api.get(`/employees/${employeeId}/certifications`),
+    add: (employeeId, data) => api.post(`/employees/${employeeId}/certifications`, data),
+    remove: (employeeId, id) => api.delete(`/employees/${employeeId}/certifications/${id}`),
+    expiring: () => api.get('/certifications/expiring'),
 };
 
 // Roles & Projects API
@@ -115,6 +156,15 @@ export const analyticsAPI = {
         api.get(`/analytics/employee/${employeeId}/gap`, { params: { roleProjectId } }),
     getRecommendations: (employeeId, roleProjectId, limit = 10) =>
         api.get(`/analytics/employee/${employeeId}/recommendations`, { params: { roleProjectId, limit } }),
+};
+
+// Insights API (organisation analytics, staffing, career paths)
+export const insightsAPI = {
+    summary: () => api.get('/analytics/organization/summary'),
+    busFactor: () => api.get('/analytics/organization/bus-factor'),
+    supplyDemand: () => api.get('/analytics/organization/supply-demand'),
+    staffing: (roleProjectId, limit = 10) => api.get(`/analytics/staffing/${roleProjectId}`, { params: { limit } }),
+    careerPaths: (employeeId) => api.get(`/analytics/employee/${employeeId}/career-paths`),
 };
 
 export default api;

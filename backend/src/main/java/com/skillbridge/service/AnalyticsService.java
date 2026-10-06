@@ -39,12 +39,17 @@ public class AnalyticsService {
                 .orElseThrow(() -> new ResourceNotFoundException("RoleProject", "id", roleProjectId));
 
         // Get employee's skills
-        List<EmployeeSkill> employeeSkills = employeeSkillRepository.findByEmployeeId(employeeId);
+        // Only APPROVED skills count: pending/rejected self-reports must not inflate the match score
+        List<EmployeeSkill> employeeSkills = employeeSkillRepository
+                .findByEmployeeIdAndApprovalStatus(employeeId, EmployeeSkill.ApprovalStatus.APPROVED);
         Map<Long, Integer> skillLevels = employeeSkills.stream()
                 .collect(Collectors.toMap(EmployeeSkill::getSkillId, EmployeeSkill::getProficiencyLevel));
 
         // Get requirements
         List<RoleSkillRequirement> requirements = requirementRepository.findByRoleProjectId(roleProjectId);
+        Map<Long, Skill> skillsById = skillRepository
+                .findAllById(requirements.stream().map(RoleSkillRequirement::getSkillId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(Skill::getId, sk -> sk));
 
         List<GapAnalysisDTO.SkillGapDTO> gaps = new ArrayList<>();
         List<GapAnalysisDTO.SkillMatchDTO> matches = new ArrayList<>();
@@ -54,8 +59,10 @@ public class AnalyticsService {
         int totalMet = 0;
 
         for (RoleSkillRequirement req : requirements) {
-            Skill skill = skillRepository.findById(req.getSkillId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Skill", "id", req.getSkillId()));
+            Skill skill = skillsById.get(req.getSkillId());
+            if (skill == null) {
+                throw new ResourceNotFoundException("Skill", "id", req.getSkillId());
+            }
 
             Integer currentLevel = skillLevels.getOrDefault(req.getSkillId(), 0);
             int requiredLevel = req.getRequiredLevel();
@@ -132,6 +139,10 @@ public class AnalyticsService {
             return Integer.compare(b.getGap(), a.getGap());
         });
 
+        Map<Long, String> skillNames = skillRepository
+                .findAllById(allGaps.stream().map(GapAnalysisDTO.SkillGapDTO::getSkillId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(Skill::getId, Skill::getName));
+
         // Limit results
         int count = limit != null ? Math.min(limit, allGaps.size()) : allGaps.size();
 
@@ -160,8 +171,7 @@ public class AnalyticsService {
             List<LearningResourceDTO> resourceDTOs = resources.stream()
                     .limit(3) // Limit to top 3 resources per skill
                     .map(res -> {
-                        Skill skill = skillRepository.findById(res.getSkillId()).orElse(null);
-                        return LearningResourceDTO.fromEntity(res, skill != null ? skill.getName() : "Unknown");
+                        return LearningResourceDTO.fromEntity(res, skillNames.getOrDefault(res.getSkillId(), "Unknown"));
                     })
                     .collect(Collectors.toList());
 

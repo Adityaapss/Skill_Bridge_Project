@@ -3,7 +3,8 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { CircularProgress, Box } from '@mui/material';
 
-const ProtectedRoute = ({ children, requiredRole }) => {
+/** `roles` (array) limits a route to those roles; others are sent to the dashboard. */
+const ProtectedRoute = ({ children, roles }) => {
     const { user, loading } = useAuth();
 
     if (loading) {
@@ -18,7 +19,7 @@ const ProtectedRoute = ({ children, requiredRole }) => {
         return <Navigate to="/login" replace />;
     }
 
-    if (requiredRole && user.role !== requiredRole) {
+    if (roles && !roles.includes(user.role)) {
         return <Navigate to="/dashboard" replace />;
     }
 

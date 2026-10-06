@@ -42,6 +42,14 @@ public class AuthController {
         return ResponseEntity.ok(employee);
     }
 
+    @PostMapping("/change-password")
+    @Operation(summary = "Change password", description = "Change the signed-in user's password")
+    public ResponseEntity<Void> changePassword(Authentication authentication,
+                                               @RequestBody java.util.Map<String, String> body) {
+        authService.changePassword(authentication.getName(), body.get("currentPassword"), body.get("newPassword"));
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/health")
     @Operation(summary = "Health check", description = "Check if the API is running")
     public ResponseEntity<String> health() {

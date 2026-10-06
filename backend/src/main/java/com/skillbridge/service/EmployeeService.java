@@ -41,7 +41,7 @@ public class EmployeeService {
      */
     public Employee getEmployeeById(Long id) {
         return employeeRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Employee not found with id: " + id));
+                .orElseThrow(() -> new com.skillbridge.exception.ResourceNotFoundException("Employee", "id", id));
     }
 
     /**
@@ -59,10 +59,15 @@ public class EmployeeService {
     public Employee createEmployee(Employee employee) {
         // Check if email already exists
         if (employeeRepository.existsByEmail(employee.getEmail())) {
-            throw new RuntimeException("Email already exists: " + employee.getEmail());
+            throw new com.skillbridge.exception.DuplicateResourceException("Employee", "email", employee.getEmail());
         }
 
-        // Encode password
+        if (employee.getPassword() == null || employee.getPassword().length() < 8) {
+            throw new IllegalArgumentException("Password must be at least 8 characters");
+        }
+
+        // A client-supplied id would make save() overwrite an existing account
+        employee.setId(null);
         employee.setPassword(passwordEncoder.encode(employee.getPassword()));
 
         return employeeRepository.save(employee);
@@ -75,11 +80,22 @@ public class EmployeeService {
     public Employee updateEmployee(Long id, Employee employeeDetails) {
         Employee employee = getEmployeeById(id);
 
-        // Update fields
+        if (!employee.getEmail().equalsIgnoreCase(employeeDetails.getEmail())
+                && employeeRepository.existsByEmail(employeeDetails.getEmail())) {
+            throw new com.skillbridge.exception.DuplicateResourceException("Employee", "email", employeeDetails.getEmail());
+        }
+        if (employeeDetails.getManagerId() != null && employeeDetails.getManagerId().equals(id)) {
+            throw new IllegalArgumentException("An employee cannot be their own manager");
+        }
+
+        // Update fields (PUT semantics: the form always sends the full record)
         employee.setName(employeeDetails.getName());
         employee.setEmail(employeeDetails.getEmail());
         employee.setRole(employeeDetails.getRole());
         employee.setDepartment(employeeDetails.getDepartment());
+        employee.setJobTitle(employeeDetails.getJobTitle());
+        employee.setLocation(employeeDetails.getLocation());
+        employee.setManagerId(employeeDetails.getManagerId());
 
         // Only update password if provided
         if (employeeDetails.getPassword() != null && !employeeDetails.getPassword().isEmpty()) {
