@@ -23,6 +23,9 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
     static final int MAX_ATTEMPTS = 10;
     static final long WINDOW_MS = 60_000;
 
+    @org.springframework.beans.factory.annotation.Value("${app.security.login-max-attempts:10}")
+    private int maxAttempts = MAX_ATTEMPTS;
+
     private final Map<String, Deque<Long>> attempts = new ConcurrentHashMap<>();
 
     @Override
@@ -49,7 +52,7 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
             while (!q.isEmpty() && now - q.peekFirst() > WINDOW_MS) {
                 q.pollFirst();
             }
-            if (q.size() >= MAX_ATTEMPTS) {
+            if (q.size() >= maxAttempts) {
                 return false;
             }
             q.addLast(now);

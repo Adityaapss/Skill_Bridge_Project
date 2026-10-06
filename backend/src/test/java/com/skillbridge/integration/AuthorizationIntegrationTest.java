@@ -87,7 +87,7 @@ class AuthorizationIntegrationTest {
     void hrSeesOrganisationAnalytics() throws Exception {
         JsonNode admin = login("admin@skillbridge.com", "admin123");
         mvc.perform(get("/analytics/organization/summary").header("Authorization", bearer(admin)))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.employees").value(4));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.employees").value(org.hamcrest.Matchers.greaterThanOrEqualTo(4)));
         mvc.perform(get("/analytics/organization/bus-factor").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk());
         mvc.perform(get("/analytics/organization/supply-demand").header("Authorization", bearer(admin)))
@@ -123,5 +123,30 @@ class AuthorizationIntegrationTest {
                         + ",\"interestLevel\":2,\"source\":\"SELF_REPORTED\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.approvalStatus").value("PENDING"));
+    }
+
+    @Test
+    void javascriptUrlsAreRejected() throws Exception {
+        JsonNode emp = login("employee@skillbridge.com", "employee123");
+        long id = emp.get("id").asLong();
+        mvc.perform(post("/employees/" + id + "/certifications").header("Authorization", bearer(emp))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"X\",\"credentialUrl\":\"javascript:alert(1)\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void createEmployeeIgnoresClientSuppliedId() throws Exception {
+        JsonNode admin = login("admin@skillbridge.com", "admin123");
+        long existing = login("employee@skillbridge.com", "employee123").get("id").asLong();
+        mvc.perform(post("/employees").header("Authorization", bearer(admin))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"id\":" + existing + ",\"name\":\"New\",\"email\":\"new.person@example.com\","
+                        + "\"password\":\"longenough1\",\"role\":\"EMPLOYEE\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(org.hamcrest.Matchers.not((int) existing)));
+        // the original account is untouched
+        mvc.perform(get("/employees/" + existing).header("Authorization", bearer(admin)))
+                .andExpect(jsonPath("$.email").value("employee@skillbridge.com"));
     }
 }

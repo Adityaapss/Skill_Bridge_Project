@@ -71,6 +71,7 @@ public class LearningResourceService {
 
     @Transactional
     public LearningResourceDTO createResource(LearningResource resource) {
+        UrlValidator.requireWebUrl(resource.getUrl(), "URL");
         log.info("Creating new learning resource: {}", resource.getTitle());
 
         // Verify skill exists
@@ -84,6 +85,7 @@ public class LearningResourceService {
 
     @Transactional
     public LearningResourceDTO updateResource(Long id, LearningResource resource) {
+        UrlValidator.requireWebUrl(resource.getUrl(), "URL");
         log.info("Updating learning resource with id={}", id);
 
         LearningResource existing = resourceRepository.findById(id)

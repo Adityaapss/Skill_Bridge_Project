@@ -62,7 +62,12 @@ public class EmployeeService {
             throw new com.skillbridge.exception.DuplicateResourceException("Employee", "email", employee.getEmail());
         }
 
-        // Encode password
+        if (employee.getPassword() == null || employee.getPassword().length() < 8) {
+            throw new IllegalArgumentException("Password must be at least 8 characters");
+        }
+
+        // A client-supplied id would make save() overwrite an existing account
+        employee.setId(null);
         employee.setPassword(passwordEncoder.encode(employee.getPassword()));
 
         return employeeRepository.save(employee);

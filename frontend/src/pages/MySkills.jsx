@@ -295,7 +295,7 @@ const MySkills = () => {
                                             <TableRow key={c.id} hover>
                                                 <TableCell>
                                                     {c.name}
-                                                    {c.credentialUrl && <IconButton size="small" component="a" href={c.credentialUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${c.name} credential`}><LinkIcon fontSize="small" /></IconButton>}
+                                                    {/^https?:\/\//i.test(c.credentialUrl || '') && <IconButton size="small" component="a" href={c.credentialUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${c.name} credential`}><LinkIcon fontSize="small" /></IconButton>}
                                                 </TableCell>
                                                 <TableCell>{c.issuer || '—'}</TableCell>
                                                 <TableCell>{fmt(c.issuedDate)}</TableCell>

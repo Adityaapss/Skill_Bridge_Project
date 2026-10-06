@@ -39,6 +39,7 @@ public class CertificationService {
         if (c.getIssuedDate() != null && c.getExpiryDate() != null && c.getExpiryDate().isBefore(c.getIssuedDate())) {
             throw new IllegalArgumentException("Expiry date cannot be before the issue date");
         }
+        UrlValidator.requireWebUrl(c.getCredentialUrl(), "Credential URL");
         c.setId(null);
         c.setEmployeeId(employeeId);
         return repository.save(c);
