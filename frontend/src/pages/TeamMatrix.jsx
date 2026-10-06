@@ -1,762 +1,330 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-    Container,
-    Paper,
-    Typography,
-    Box,
-    Grid,
-    Card,
-    CardContent,
-    Chip,
-    CircularProgress,
-    Alert,
-    TextField,
-    MenuItem,
-    Autocomplete,
-    Avatar,
-    Divider,
-    Button,
-    Table,
-    TableBody,
-    TableCell,
-    TableContainer,
-    TableHead,
-    TableRow,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    IconButton,
+    Paper, Typography, Box, Button, Grid, TextField, MenuItem, Chip, Autocomplete, Table, TableHead, TableRow,
+    TableCell, TableBody, TableContainer, TablePagination, ToggleButtonGroup, ToggleButton, Dialog, DialogTitle,
+    DialogContent, DialogActions, InputAdornment, Tooltip, LinearProgress, Alert, Avatar,
 } from '@mui/material';
-import {
-    Person,
-    Work,
-    LocationOn,
-    Business,
-    CheckCircle,
-    Cancel,
-    Search,
-    FilterList,
-    Close,
-    Code,
-} from '@mui/icons-material';
-import { useAuth } from '../context/AuthContext';
-import { employeeSkillsAPI, skillsAPI, employeesAPI, projectsAPI } from '../services/api';
+import { useTheme } from '@mui/material/styles';
+import { Search, TableRows, GridOn, PersonSearch, Download, FilterListOff } from '@mui/icons-material';
+import { employeeSkillsAPI, skillsAPI, employeesAPI, projectsAPI, rolesProjectsAPI, insightsAPI } from '../services/api';
+import { useUi } from '../context/UiContext';
+import { errorMessage } from '../utils/errors';
+import { downloadBlob } from '../utils/download';
+import { levelColor, LEVEL_LABELS } from '../theme';
+import PageHeader from '../components/PageHeader';
+import PageSkeleton from '../components/PageSkeleton';
+import EmptyState from '../components/EmptyState';
+import useTablePagination from '../hooks/useTablePagination';
+
+const BILLABLE = { BILLABLE: ['Billable', 'success'], NON_BILLABLE: ['Non-billable', 'warning'], INVESTMENT: ['Investment', 'info'], 'Not Assigned': ['Not assigned', 'default'] };
+const scoreColor = (n) => (n >= 70 ? 'success' : n >= 40 ? 'warning' : 'error');
+const initials = (name) => name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
 
 const TeamMatrix = () => {
-    const { user } = useAuth();
+    const theme = useTheme();
+    const { toast } = useUi();
+    const [view, setView] = useState('directory');
     const [employees, setEmployees] = useState([]);
     const [allSkills, setAllSkills] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
 
-    // Filter states
-    const [searchTerm, setSearchTerm] = useState('');
+    const [search, setSearch] = useState('');
     const [selectedSkills, setSelectedSkills] = useState([]);
-    const [selectedDepartment, setSelectedDepartment] = useState('ALL');
-    const [selectedAvailability, setSelectedAvailability] = useState('ALL');
-    const [selectedBillable, setSelectedBillable] = useState('ALL');
-    const [selectedProject, setSelectedProject] = useState('ALL');
+    const [minLevel, setMinLevel] = useState(1);
+    const [department, setDepartment] = useState('ALL');
+    const [availability, setAvailability] = useState('ALL');
+    const [billable, setBillable] = useState('ALL');
+    const [project, setProject] = useState('ALL');
+    const [detail, setDetail] = useState(null);
 
-    // Employee detail modal
-    const [selectedEmployee, setSelectedEmployee] = useState(null);
-    const [openEmployeeDetail, setOpenEmployeeDetail] = useState(false);
+    const [targets, setTargets] = useState([]);
+    const [targetId, setTargetId] = useState('');
+    const [suggestions, setSuggestions] = useState(null);
+    const [suggesting, setSuggesting] = useState(false);
 
-    useEffect(() => {
-        fetchData();
-    }, []);
-
-    const fetchData = async () => {
+    const load = useCallback(async () => {
         try {
-            const [skillsResponse, employeesResponse, ongoingProjectsResponse] = await Promise.all([
-                skillsAPI.getAll(true),
-                employeesAPI.getAll(),
-                projectsAPI.getOngoing(),
+            const [skills, emps, ongoing, rp] = await Promise.all([
+                skillsAPI.getAll(true), employeesAPI.getAll(), projectsAPI.getOngoing(), rolesProjectsAPI.getAll(undefined, 'ACTIVE'),
             ]);
-
-            setAllSkills(skillsResponse.data);
-
-            // Fetch skills for each employee and enrich with project data
-            const employeesWithData = await Promise.all(
-                employeesResponse.data.map(async (emp) => {
-                    try {
-                        const skillsData = await employeeSkillsAPI.getByEmployee(emp.id);
-
-                        // Find projects this employee is assigned to
-                        const assignedProjects = ongoingProjectsResponse.data.filter(project =>
-                            project.assignedEmployees && project.assignedEmployees.some(assigned => assigned.employeeId === emp.id)
-                        );
-
-                        // Get allocation type from first project (if assigned)
-                        const firstAssignment = assignedProjects.length > 0
-                            ? assignedProjects[0].assignedEmployees.find(a => a.employeeId === emp.id)
-                            : null;
-
-                        return {
-                            ...emp,
-                            skills: skillsData.data,
-                            availability: assignedProjects.length > 0 ? 'Busy' : 'Available',
-                            billableStatus: firstAssignment?.allocationType || 'Not Assigned',
-                            currentProject: assignedProjects.length > 0 ? assignedProjects[0].name : 'Not Assigned',
-                            projectCount: assignedProjects.length,
-                            allProjects: assignedProjects, // Store all projects
-                        };
-                    } catch (err) {
-                        return {
-                            ...emp,
-                            skills: [],
-                            availability: 'Available',
-                            billableStatus: 'Not Assigned',
-                            currentProject: 'Not Assigned',
-                            projectCount: 0,
-                            allProjects: [],
-                        };
-                    }
-                })
-            );
-
-            setEmployees(employeesWithData);
+            setAllSkills(skills.data);
+            setTargets(rp.data);
+            const enriched = await Promise.all(emps.data.map(async (emp) => {
+                let list = [];
+                try { list = (await employeeSkillsAPI.getByEmployee(emp.id)).data; } catch { /* leave empty */ }
+                // Only manager-approved skills count when searching for people
+                const approved = list.filter((s) => s.approvalStatus === 'APPROVED');
+                const mine = ongoing.data.filter((p) => p.assignedEmployees?.some((a) => a.employeeId === emp.id));
+                const first = mine[0]?.assignedEmployees.find((a) => a.employeeId === emp.id);
+                return {
+                    ...emp, skills: approved,
+                    availability: mine.length ? 'Busy' : 'Available',
+                    billableStatus: first?.allocationType || 'Not Assigned',
+                    currentProject: mine[0]?.name || 'Not Assigned',
+                    allProjects: mine,
+                };
+            }));
+            setEmployees(enriched);
         } catch (err) {
-            setError('Failed to load employee data');
-            console.error(err);
+            toast.error(errorMessage(err, 'Failed to load employee data'));
         } finally {
             setLoading(false);
         }
+    }, [toast]);
+
+    useEffect(() => { load(); }, [load]);
+
+    const departments = useMemo(() => ['ALL', ...new Set(employees.map((e) => e.department).filter(Boolean))], [employees]);
+    const projectNames = useMemo(() => ['ALL', 'Not Assigned', ...new Set(employees.map((e) => e.currentProject).filter((p) => p !== 'Not Assigned'))], [employees]);
+
+    const filtered = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        return employees.filter((e) =>
+            (!q || e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q)) &&
+            selectedSkills.every((sk) => e.skills.some((es) => es.skillId === sk.id && es.proficiencyLevel >= minLevel)) &&
+            (department === 'ALL' || e.department === department) &&
+            (availability === 'ALL' || e.availability === availability) &&
+            (billable === 'ALL' || e.billableStatus === billable) &&
+            (project === 'ALL' || e.currentProject === project));
+    }, [employees, search, selectedSkills, minLevel, department, availability, billable, project]);
+
+    const filtersActive = search || selectedSkills.length || department !== 'ALL' || availability !== 'ALL' || billable !== 'ALL' || project !== 'ALL';
+    const clear = () => { setSearch(''); setSelectedSkills([]); setMinLevel(1); setDepartment('ALL'); setAvailability('ALL'); setBillable('ALL'); setProject('ALL'); };
+
+    const paging = useTablePagination(filtered, 10);
+    const heatPaging = useTablePagination(filtered, 15);
+
+    // Heatmap columns: selected skills, else the most commonly held ones
+    const heatSkills = useMemo(() => {
+        if (selectedSkills.length) return selectedSkills;
+        const counts = {};
+        employees.forEach((e) => e.skills.forEach((s) => { counts[s.skillId] = (counts[s.skillId] || 0) + 1; }));
+        return allSkills.filter((s) => counts[s.id]).sort((a, b) => counts[b.id] - counts[a.id]).slice(0, 12);
+    }, [selectedSkills, employees, allSkills]);
+
+    const levelOf = (emp, skillId) => emp.skills.find((s) => s.skillId === skillId)?.proficiencyLevel || 0;
+
+    const exportCsv = async () => {
+        try {
+            downloadBlob((await employeesAPI.exportSkillMatrix()).data, 'skill-matrix.csv');
+        } catch (err) {
+            toast.error(errorMessage(err, 'Export failed'));
+        }
     };
 
-    // Get unique values for filters
-    const departments = ['ALL', ...new Set(employees.map(e => e.department).filter(Boolean))];
-    const projects = ['ALL', 'Not Assigned', ...new Set(employees.map(e => e.currentProject).filter(p => p !== 'Not Assigned'))];
-    const availabilityOptions = ['ALL', 'Available', 'Busy'];
-    const billableOptions = ['ALL', 'BILLABLE', 'NON_BILLABLE', 'INVESTMENT', 'Not Assigned'];
-
-    // Filter employees based on all criteria
-    const filteredEmployees = employees.filter(emp => {
-        // Search term filter (name, email)
-        const matchesSearch = searchTerm === '' ||
-            emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            emp.email.toLowerCase().includes(searchTerm.toLowerCase());
-
-        // Skills filter
-        const matchesSkills = selectedSkills.length === 0 ||
-            selectedSkills.every(selectedSkill =>
-                emp.skills.some(empSkill => empSkill.skillId === selectedSkill.id)
-            );
-
-        // Department filter
-        const matchesDepartment = selectedDepartment === 'ALL' || emp.department === selectedDepartment;
-
-        // Availability filter
-        const matchesAvailability = selectedAvailability === 'ALL' || emp.availability === selectedAvailability;
-
-        // Billable status filter
-        const matchesBillable = selectedBillable === 'ALL' || emp.billableStatus === selectedBillable;
-
-        // Project filter
-        const matchesProject = selectedProject === 'ALL' || emp.currentProject === selectedProject;
-
-        return matchesSearch && matchesSkills && matchesDepartment &&
-            matchesAvailability && matchesBillable && matchesProject;
-    });
-
-    const getAvailabilityColor = (availability) => {
-        return availability === 'Available' ? 'success' : 'error';
+    const suggest = async () => {
+        setSuggesting(true);
+        try {
+            setSuggestions((await insightsAPI.staffing(targetId, 10)).data);
+        } catch (err) {
+            toast.error(errorMessage(err, 'Could not compute suggestions'));
+        } finally {
+            setSuggesting(false);
+        }
     };
 
-    const getBillableColor = (status) => {
-        const colors = {
-            'BILLABLE': 'success',
-            'NON_BILLABLE': 'warning',
-            'INVESTMENT': 'info',
-            'Not Assigned': 'default'
-        };
-        return colors[status] || 'default';
-    };
+    if (loading) return <PageSkeleton tiles={3} />;
 
-    const getBillableLabel = (status) => {
-        const labels = {
-            'BILLABLE': '💰 Billable',
-            'NON_BILLABLE': '📋 Non-Billable',
-            'INVESTMENT': '🎓 Investment',
-            'Not Assigned': 'Not Assigned'
-        };
-        return labels[status] || status;
-    };
-
-    const getSkillName = (skillId) => {
-        const skill = allSkills.find(s => s.id === skillId);
-        return skill ? skill.name : 'Unknown';
-    };
-
-    const getProficiencyLabel = (level) => {
-        const labels = ['None', 'Beginner', 'Intermediate', 'Advanced'];
-        return labels[level] || '-';
-    };
-
-    const clearFilters = () => {
-        setSearchTerm('');
-        setSelectedSkills([]);
-        setSelectedDepartment('ALL');
-        setSelectedAvailability('ALL');
-        setSelectedBillable('ALL');
-        setSelectedProject('ALL');
-    };
-
-    if (loading) {
-        return (
-            <Container>
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-                    <CircularProgress />
-                </Box>
-            </Container>
-        );
-    }
+    const target = targets.find((t) => t.id === targetId);
 
     return (
-        <Container maxWidth="xl">
-            <Paper sx={{ p: 3, mb: 3 }}>
-                <Box sx={{ mb: 3 }}>
-                    <Typography variant="h4" gutterBottom fontWeight="bold" color="primary">
-                        🔍 Exploring the Resources
-                    </Typography>
-                    <Typography variant="body1" color="text.secondary">
-                        Search and filter employees based on skills, availability, projects, and more
-                    </Typography>
-                </Box>
+        <Box>
+            <PageHeader
+                title="Team matrix"
+                subtitle="Find the right people by skill, availability and project"
+                actions={<Button variant="outlined" startIcon={<Download />} onClick={exportCsv}>Export CSV</Button>}
+            />
 
-                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+            <Paper sx={{ p: 2, mb: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+                <ToggleButtonGroup exclusive size="small" value={view} onChange={(_, v) => v && setView(v)} aria-label="View">
+                    <ToggleButton value="directory"><TableRows fontSize="small" sx={{ mr: 1 }} />Directory</ToggleButton>
+                    <ToggleButton value="heatmap"><GridOn fontSize="small" sx={{ mr: 1 }} />Heatmap</ToggleButton>
+                    <ToggleButton value="staffing"><PersonSearch fontSize="small" sx={{ mr: 1 }} />Staffing</ToggleButton>
+                </ToggleButtonGroup>
+                <Typography color="text.secondary">{filtered.length} of {employees.length} people</Typography>
+            </Paper>
 
-                {/* Filter Section */}
-                <Paper
-                    elevation={3}
-                    sx={{
-                        p: 4,
-                        mb: 4,
-                        background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-                        borderRadius: 2,
-                    }}
-                >
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                        <FilterList sx={{ mr: 1.5, color: 'primary.main', fontSize: 28 }} />
-                        <Typography variant="h5" fontWeight="bold" color="primary.dark">
-                            Filter Resources
-                        </Typography>
-                    </Box>
-
-                    <Grid container spacing={3}>
-                        {/* Search Bar */}
-                        <Grid item xs={12} md={6}>
-                            <TextField
-                                fullWidth
-                                label="Search by Name or Email"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                placeholder="e.g., John Doe, john@example.com"
-                                variant="outlined"
-                                sx={{
-                                    bgcolor: 'white',
-                                    borderRadius: 1,
-                                    '& .MuiOutlinedInput-root': {
-                                        '&:hover fieldset': {
-                                            borderColor: 'primary.main',
-                                        },
-                                    },
-                                }}
-                                InputProps={{
-                                    startAdornment: <Search sx={{ mr: 1, color: 'primary.main' }} />
-                                }}
-                            />
+            {view !== 'staffing' && (
+                <Paper sx={{ p: 2.5, mb: 3 }}>
+                    <Grid container spacing={2}>
+                        <Grid size={{ xs: 12, md: 4 }}>
+                            <TextField fullWidth size="small" label="Search name or email" value={search} onChange={(e) => setSearch(e.target.value)}
+                                InputProps={{ startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> }} />
                         </Grid>
-
-                        {/* Skills Filter */}
-                        <Grid item xs={12} md={6}>
-                            <Autocomplete
-                                multiple
-                                options={allSkills}
-                                getOptionLabel={(option) => option.name}
-                                value={selectedSkills}
-                                onChange={(event, newValue) => setSelectedSkills(newValue)}
-                                sx={{
-                                    bgcolor: 'white',
-                                    borderRadius: 1,
-                                }}
-                                renderInput={(params) => (
-                                    <TextField
-                                        {...params}
-                                        label="Filter by Skills"
-                                        placeholder="Select skills..."
-                                        variant="outlined"
-                                    />
-                                )}
-                                renderTags={(value, getTagProps) =>
-                                    value.map((option, index) => (
-                                        <Chip
-                                            label={option.name}
-                                            {...getTagProps({ index })}
-                                            size="small"
-                                            color="primary"
-                                            sx={{ fontWeight: 'bold' }}
-                                        />
-                                    ))
-                                }
-                            />
+                        <Grid size={{ xs: 12, md: 5 }}>
+                            <Autocomplete multiple size="small" options={allSkills} getOptionLabel={(o) => o.name} value={selectedSkills}
+                                onChange={(_, v) => setSelectedSkills(v)}
+                                renderInput={(params) => <TextField {...params} label="Must have skills" placeholder="Select skills…" />} />
                         </Grid>
-
-                        {/* Department Filter */}
-                        <Grid item xs={12} sm={6} md={3}>
-                            <TextField
-                                select
-                                fullWidth
-                                label="Department"
-                                value={selectedDepartment}
-                                onChange={(e) => setSelectedDepartment(e.target.value)}
-                                variant="outlined"
-                                sx={{
-                                    bgcolor: 'white',
-                                    borderRadius: 1,
-                                }}
-                            >
-                                {departments.map((dept) => (
-                                    <MenuItem key={dept} value={dept}>
-                                        <Business fontSize="small" sx={{ mr: 1, color: 'action.active' }} />
-                                        {dept}
-                                    </MenuItem>
-                                ))}
+                        <Grid size={{ xs: 12, md: 3 }}>
+                            <TextField select fullWidth size="small" label="Minimum level" value={minLevel} onChange={(e) => setMinLevel(Number(e.target.value))} disabled={!selectedSkills.length}>
+                                {LEVEL_LABELS.slice(1).map((l, i) => <MenuItem key={l} value={i + 1}>{l}+</MenuItem>)}
                             </TextField>
                         </Grid>
-
-                        {/* Availability Filter */}
-                        <Grid item xs={12} sm={6} md={3}>
-                            <TextField
-                                select
-                                fullWidth
-                                label="Availability"
-                                value={selectedAvailability}
-                                onChange={(e) => setSelectedAvailability(e.target.value)}
-                                variant="outlined"
-                                sx={{
-                                    bgcolor: 'white',
-                                    borderRadius: 1,
-                                }}
-                            >
-                                {availabilityOptions.map((option) => (
-                                    <MenuItem key={option} value={option}>
-                                        {option === 'Available' && <CheckCircle fontSize="small" sx={{ mr: 1, color: 'success.main' }} />}
-                                        {option === 'Busy' && <Cancel fontSize="small" sx={{ mr: 1, color: 'error.main' }} />}
-                                        {option === 'ALL' && <FilterList fontSize="small" sx={{ mr: 1, color: 'action.active' }} />}
-                                        {option}
-                                    </MenuItem>
-                                ))}
-                            </TextField>
-                        </Grid>
-
-                        {/* Billable Status Filter */}
-                        <Grid item xs={12} sm={6} md={3}>
-                            <TextField
-                                select
-                                fullWidth
-                                label="Allocation Type"
-                                value={selectedBillable}
-                                onChange={(e) => setSelectedBillable(e.target.value)}
-                                variant="outlined"
-                                sx={{
-                                    bgcolor: 'white',
-                                    borderRadius: 1,
-                                }}
-                            >
-                                {billableOptions.map((option) => (
-                                    <MenuItem key={option} value={option}>
-                                        {option === 'ALL' ? 'ALL' : getBillableLabel(option)}
-                                    </MenuItem>
-                                ))}
-                            </TextField>
-                        </Grid>
-
-                        {/* Project Filter */}
-                        <Grid item xs={12} sm={6} md={3}>
-                            <TextField
-                                select
-                                fullWidth
-                                label="Project"
-                                value={selectedProject}
-                                onChange={(e) => setSelectedProject(e.target.value)}
-                                variant="outlined"
-                                sx={{
-                                    bgcolor: 'white',
-                                    borderRadius: 1,
-                                }}
-                            >
-                                {projects.map((project) => (
-                                    <MenuItem key={project} value={project}>
-                                        <Work fontSize="small" sx={{ mr: 1, color: 'action.active' }} />
-                                        {project}
-                                    </MenuItem>
-                                ))}
-                            </TextField>
+                        {[['Department', department, setDepartment, departments], ['Availability', availability, setAvailability, ['ALL', 'Available', 'Busy']],
+                        ['Allocation', billable, setBillable, ['ALL', 'BILLABLE', 'NON_BILLABLE', 'INVESTMENT', 'Not Assigned']], ['Project', project, setProject, projectNames]].map(([label, value, set, opts]) => (
+                            <Grid key={label} size={{ xs: 6, md: 2.4 }}>
+                                <TextField select fullWidth size="small" label={label} value={value} onChange={(e) => set(e.target.value)}>
+                                    {opts.map((o) => <MenuItem key={o} value={o}>{o === 'ALL' ? `All` : BILLABLE[o]?.[0] || o}</MenuItem>)}
+                                </TextField>
+                            </Grid>
+                        ))}
+                        <Grid size={{ xs: 12, md: 2.4 }}>
+                            <Button fullWidth startIcon={<FilterListOff />} onClick={clear} disabled={!filtersActive} sx={{ height: 40 }}>Clear filters</Button>
                         </Grid>
                     </Grid>
-
-                    <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-                        <Box sx={{
-                            bgcolor: 'white',
-                            px: 2,
-                            py: 1,
-                            borderRadius: 1,
-                            boxShadow: 1,
-                        }}>
-                            <Typography variant="body2" color="text.secondary">
-                                Showing <Typography component="span" fontWeight="bold" color="primary.main">{filteredEmployees.length}</Typography> of <Typography component="span" fontWeight="bold">{employees.length}</Typography> resources
-                            </Typography>
-                        </Box>
-                        <Button
-                            variant="contained"
-                            size="medium"
-                            onClick={clearFilters}
-                            sx={{
-                                fontWeight: 'bold',
-                                boxShadow: 2,
-                                '&:hover': {
-                                    boxShadow: 4,
-                                }
-                            }}
-                        >
-                            Clear All Filters
-                        </Button>
-                    </Box>
                 </Paper>
+            )}
 
-                {/* Employee Table */}
-                <Paper elevation={3} sx={{ overflow: 'hidden' }}>
-                    {filteredEmployees.length === 0 ? (
-                        <Box sx={{ p: 6, textAlign: 'center' }}>
-                            <Typography variant="h6" color="text.secondary" gutterBottom>
-                                No resources found matching your criteria
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                Try adjusting your filters
-                            </Typography>
-                        </Box>
-                    ) : (
+            {view === 'directory' && (
+                <Paper>
+                    {filtered.length === 0 ? <EmptyState title="No one matches these filters" actionLabel="Clear filters" onAction={clear} /> : (
                         <>
-                            <Box sx={{ overflowX: 'auto' }}>
-                                <Table sx={{ minWidth: 1000 }}>
+                            <TableContainer>
+                                <Table>
+                                    <TableHead><TableRow><TableCell>Person</TableCell><TableCell>Department</TableCell><TableCell>Top skills</TableCell><TableCell>Availability</TableCell><TableCell>Allocation</TableCell></TableRow></TableHead>
+                                    <TableBody>
+                                        {paging.pageRows.map((e) => {
+                                            const top = [...e.skills].sort((a, b) => b.proficiencyLevel - a.proficiencyLevel).slice(0, 3);
+                                            const [bl, bc] = BILLABLE[e.billableStatus] || [e.billableStatus, 'default'];
+                                            return (
+                                                <TableRow key={e.id} hover onClick={() => setDetail(e)} sx={{ cursor: 'pointer' }}>
+                                                    <TableCell>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                            <Avatar sx={{ width: 34, height: 34, fontSize: 13, bgcolor: 'primary.main' }}>{initials(e.name)}</Avatar>
+                                                            <Box><Typography fontWeight={600}>{e.name}</Typography><Typography variant="caption" color="text.secondary">{e.jobTitle || e.email}</Typography></Box>
+                                                        </Box>
+                                                    </TableCell>
+                                                    <TableCell>{e.department || '—'}</TableCell>
+                                                    <TableCell>{top.length ? top.map((s) => <Chip key={s.id} size="small" label={`${s.skillName} · ${LEVEL_LABELS[s.proficiencyLevel][0]}`} sx={{ mr: 0.5 }} />) : <Typography variant="body2" color="text.secondary">No approved skills</Typography>}</TableCell>
+                                                    <TableCell><Chip size="small" color={e.availability === 'Available' ? 'success' : 'error'} variant="outlined" label={e.availability} /></TableCell>
+                                                    <TableCell><Chip size="small" color={bc} label={bl} /></TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                            <TablePagination {...paging.props} />
+                        </>
+                    )}
+                </Paper>
+            )}
+
+            {view === 'heatmap' && (
+                <Paper>
+                    {filtered.length === 0 || heatSkills.length === 0 ? <EmptyState title="Nothing to show" message="No approved skills match the current filters." /> : (
+                        <>
+                            <Box sx={{ px: 2, pt: 2, display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    {selectedSkills.length ? 'Selected skills' : 'Most common skills'} · level:
+                                </Typography>
+                                {LEVEL_LABELS.map((l, i) => (
+                                    <Box key={l} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                        <Box sx={{ width: 14, height: 14, borderRadius: 0.5, bgcolor: levelColor(i, theme.palette.mode) }} />
+                                        <Typography variant="caption">{l}</Typography>
+                                    </Box>
+                                ))}
+                            </Box>
+                            <TableContainer sx={{ mt: 1 }}>
+                                <Table size="small" stickyHeader>
                                     <TableHead>
-                                        <TableRow sx={{ bgcolor: 'primary.main' }}>
-                                            <TableCell sx={{ color: 'white', fontWeight: 'bold', fontSize: '0.95rem' }}>Employee</TableCell>
-                                            <TableCell sx={{ color: 'white', fontWeight: 'bold', fontSize: '0.95rem' }}>Role & Department</TableCell>
-                                            <TableCell sx={{ color: 'white', fontWeight: 'bold', fontSize: '0.95rem' }}>Status</TableCell>
-                                            <TableCell sx={{ color: 'white', fontWeight: 'bold', fontSize: '0.95rem' }}>Current Project</TableCell>
-                                            <TableCell sx={{ color: 'white', fontWeight: 'bold', fontSize: '0.95rem' }}>Skills</TableCell>
+                                        <TableRow>
+                                            <TableCell sx={{ minWidth: 170 }}>Person</TableCell>
+                                            {heatSkills.map((s) => <TableCell key={s.id} align="center" sx={{ minWidth: 86 }}>{s.name}</TableCell>)}
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
-                                        {filteredEmployees.map((emp, index) => (
-                                            <TableRow
-                                                key={emp.id}
-                                                onClick={() => {
-                                                    setSelectedEmployee(emp);
-                                                    setOpenEmployeeDetail(true);
-                                                }}
-                                                sx={{
-                                                    '&:nth-of-type(odd)': { bgcolor: 'action.hover' },
-                                                    '&:hover': { bgcolor: 'action.selected', cursor: 'pointer' },
-                                                    transition: 'background-color 0.2s',
-                                                }}
-                                            >
-                                                {/* Employee Info */}
-                                                <TableCell>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                                        <Avatar sx={{ bgcolor: 'primary.main', width: 40, height: 40 }}>
-                                                            {emp.name.split(' ').map(n => n[0]).join('')}
-                                                        </Avatar>
-                                                        <Box>
-                                                            <Typography variant="body2" fontWeight="bold">
-                                                                {emp.name}
-                                                            </Typography>
-                                                            <Typography variant="caption" color="text.secondary">
-                                                                {emp.email}
-                                                            </Typography>
-                                                        </Box>
-                                                    </Box>
-                                                </TableCell>
-
-                                                {/* Role & Department */}
-                                                <TableCell>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-                                                        <Work fontSize="small" color="action" />
-                                                        <Typography variant="body2">{emp.role}</Typography>
-                                                    </Box>
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                                        <Business fontSize="small" color="action" />
-                                                        <Typography variant="caption" color="text.secondary">
-                                                            {emp.department || 'Not Set'}
-                                                        </Typography>
-                                                    </Box>
-                                                </TableCell>
-
-                                                {/* Status */}
-                                                <TableCell>
-                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                                        <Chip
-                                                            icon={emp.availability === 'Available' ? <CheckCircle /> : <Cancel />}
-                                                            label={emp.availability}
-                                                            color={getAvailabilityColor(emp.availability)}
-                                                            size="small"
-                                                            sx={{ width: 'fit-content' }}
-                                                        />
-                                                        <Chip
-                                                            label={getBillableLabel(emp.billableStatus)}
-                                                            color={getBillableColor(emp.billableStatus)}
-                                                            size="small"
-                                                            sx={{ width: 'fit-content', fontSize: '0.7rem' }}
-                                                        />
-                                                    </Box>
-                                                </TableCell>
-
-                                                {/* Current Project */}
-                                                <TableCell>
-                                                    <Typography variant="body2" fontWeight="medium">
-                                                        {emp.currentProject}
-                                                    </Typography>
-                                                    {emp.projectCount > 1 && (
-                                                        <Typography variant="caption" color="primary">
-                                                            +{emp.projectCount - 1} more project{emp.projectCount - 1 > 1 ? 's' : ''}
-                                                        </Typography>
-                                                    )}
-                                                </TableCell>
-
-                                                {/* Skills */}
-                                                <TableCell>
-                                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: 300 }}>
-                                                        {emp.skills.length === 0 ? (
-                                                            <Typography variant="caption" color="text.secondary">
-                                                                No skills
-                                                            </Typography>
-                                                        ) : (
-                                                            <>
-                                                                {emp.skills.slice(0, 3).map((skill) => (
-                                                                    <Chip
-                                                                        key={skill.id}
-                                                                        label={getSkillName(skill.skillId)}
-                                                                        size="small"
-                                                                        variant="outlined"
-                                                                        color="primary"
-                                                                    />
-                                                                ))}
-                                                                {emp.skills.length > 3 && (
-                                                                    <Chip
-                                                                        label={`+${emp.skills.length - 3}`}
-                                                                        size="small"
-                                                                        color="primary"
-                                                                    />
-                                                                )}
-                                                            </>
-                                                        )}
-                                                    </Box>
-                                                </TableCell>
+                                        {heatPaging.pageRows.map((e) => (
+                                            <TableRow key={e.id} hover>
+                                                <TableCell sx={{ cursor: 'pointer' }} onClick={() => setDetail(e)}>{e.name}</TableCell>
+                                                {heatSkills.map((s) => {
+                                                    const lvl = levelOf(e, s.id);
+                                                    return (
+                                                        <TableCell key={s.id} align="center" sx={{ p: 0.5 }}>
+                                                            <Tooltip title={`${e.name} · ${s.name}: ${LEVEL_LABELS[lvl]}`}>
+                                                                <Box sx={{ borderRadius: 1, py: 0.75, bgcolor: levelColor(lvl, theme.palette.mode), color: lvl >= 2 ? '#fff' : 'text.secondary', fontWeight: 700, fontSize: 13 }}>
+                                                                    {lvl || '·'}
+                                                                </Box>
+                                                            </Tooltip>
+                                                        </TableCell>
+                                                    );
+                                                })}
                                             </TableRow>
                                         ))}
                                     </TableBody>
                                 </Table>
-                            </Box>
-
-                            {/* Table Footer with Summary */}
-                            <Box sx={{
-                                p: 2,
-                                bgcolor: 'grey.100',
-                                borderTop: '2px solid',
-                                borderColor: 'divider',
-                                display: 'flex',
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                            }}>
-                                <Typography variant="body2" color="text.secondary">
-                                    Displaying <strong>{filteredEmployees.length}</strong> resource{filteredEmployees.length !== 1 ? 's' : ''}
-                                </Typography>
-                            </Box>
+                            </TableContainer>
+                            <TablePagination {...heatPaging.props} />
                         </>
                     )}
                 </Paper>
+            )}
 
-                {/* Employee Detail Modal */}
-                <Dialog
-                    open={openEmployeeDetail}
-                    onClose={() => setOpenEmployeeDetail(false)}
-                    maxWidth="md"
-                    fullWidth
-                >
-                    {selectedEmployee && (
-                        <>
-                            <DialogTitle>
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                        <Avatar sx={{ width: 56, height: 56, bgcolor: 'primary.main', fontSize: '1.5rem' }}>
-                                            {selectedEmployee.name.split(' ').map(n => n[0]).join('')}
-                                        </Avatar>
-                                        <Box>
-                                            <Typography variant="h5" fontWeight="bold">
-                                                {selectedEmployee.name}
-                                            </Typography>
-                                            <Typography variant="body2" color="text.secondary">
-                                                {selectedEmployee.email}
-                                            </Typography>
-                                        </Box>
-                                    </Box>
-                                    <IconButton onClick={() => setOpenEmployeeDetail(false)}>
-                                        <Close />
-                                    </IconButton>
+            {view === 'staffing' && (
+                <Paper sx={{ p: 3 }}>
+                    <Typography variant="h6" gutterBottom>Who fits this role or project?</Typography>
+                    <Typography color="text.secondary" sx={{ mb: 2 }}>
+                        People are ranked by how many of the required skills they meet (approved skills only), then by lightest current workload.
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 3 }}>
+                        <TextField select size="small" label="Role / project" value={targetId} onChange={(e) => { setTargetId(e.target.value); setSuggestions(null); }} sx={{ minWidth: 280 }}
+                            helperText={targets.length === 0 ? 'Create a role or project with skill requirements first' : ' '}>
+                            {targets.map((t) => <MenuItem key={t.id} value={t.id}>{t.name} ({t.type.toLowerCase()})</MenuItem>)}
+                        </TextField>
+                        <Button variant="contained" disabled={!targetId || suggesting} onClick={suggest} sx={{ height: 40 }}>{suggesting ? 'Matching…' : 'Find best fit'}</Button>
+                    </Box>
+                    {suggestions && (suggestions.length === 0 || suggestions[0].totalSkills === 0 ? (
+                        <Alert severity="info">{target?.name} has no skill requirements yet, so there is nothing to match against.</Alert>
+                    ) : (
+                        <TableContainer>
+                            <Table size="small">
+                                <TableHead><TableRow><TableCell>#</TableCell><TableCell>Person</TableCell><TableCell sx={{ minWidth: 190 }}>Match</TableCell><TableCell>Workload</TableCell><TableCell>Missing</TableCell></TableRow></TableHead>
+                                <TableBody>
+                                    {suggestions.map((s, i) => (
+                                        <TableRow key={s.employeeId} hover>
+                                            <TableCell>{i + 1}</TableCell>
+                                            <TableCell><Typography fontWeight={600}>{s.name}</Typography><Typography variant="caption" color="text.secondary">{s.jobTitle || s.department || ''}</Typography></TableCell>
+                                            <TableCell>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <LinearProgress variant="determinate" value={s.matchScore} color={scoreColor(s.matchScore)} sx={{ flexGrow: 1, height: 8, borderRadius: 4 }} />
+                                                    <Typography variant="body2" sx={{ width: 64 }}>{s.matchScore.toFixed(0)}% ({s.metSkills}/{s.totalSkills})</Typography>
+                                                </Box>
+                                            </TableCell>
+                                            <TableCell><Chip size="small" variant="outlined" color={s.activeAssignments === 0 ? 'success' : 'default'} label={s.activeAssignments === 0 ? 'Free' : `${s.activeAssignments} project${s.activeAssignments > 1 ? 's' : ''}`} /></TableCell>
+                                            <TableCell>{s.missingSkills.length ? s.missingSkills.join(', ') : '—'}</TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    ))}
+                </Paper>
+            )}
+
+            <Dialog open={Boolean(detail)} onClose={() => setDetail(null)} fullWidth maxWidth="sm">
+                {detail && (
+                    <>
+                        <DialogTitle>{detail.name}</DialogTitle>
+                        <DialogContent dividers>
+                            <Typography color="text.secondary" gutterBottom>{[detail.jobTitle, detail.department, detail.location].filter(Boolean).join(' · ') || detail.email}</Typography>
+                            <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Approved skills</Typography>
+                            {detail.skills.length === 0 ? <Typography color="text.secondary">None yet</Typography> : (
+                                <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                                    {[...detail.skills].sort((a, b) => b.proficiencyLevel - a.proficiencyLevel).map((s) => (
+                                        <Chip key={s.id} size="small" label={`${s.skillName} · ${LEVEL_LABELS[s.proficiencyLevel]}`} color={['default', 'error', 'warning', 'success'][s.proficiencyLevel]} variant="outlined" />
+                                    ))}
                                 </Box>
-                            </DialogTitle>
-
-                            <DialogContent dividers>
-                                <Grid container spacing={3}>
-                                    {/* Personal Information */}
-                                    <Grid item xs={12}>
-                                        <Typography variant="h6" gutterBottom fontWeight="bold" color="primary">
-                                            <Person sx={{ mr: 1, verticalAlign: 'middle' }} />
-                                            Personal Information
-                                        </Typography>
-                                        <Divider sx={{ mb: 2 }} />
-                                        <Grid container spacing={2}>
-                                            <Grid item xs={12} sm={6}>
-                                                <Typography variant="caption" color="text.secondary">Job Title</Typography>
-                                                <Typography variant="body1" fontWeight="medium">
-                                                    {selectedEmployee.role || 'Not specified'}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={12} sm={6}>
-                                                <Typography variant="caption" color="text.secondary">Department</Typography>
-                                                <Typography variant="body1" fontWeight="medium">
-                                                    {selectedEmployee.department || 'Not specified'}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={12} sm={6}>
-                                                <Typography variant="caption" color="text.secondary">Location</Typography>
-                                                <Typography variant="body1" fontWeight="medium">
-                                                    <LocationOn fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
-                                                    {selectedEmployee.location || 'Not specified'}
-                                                </Typography>
-                                            </Grid>
-                                            <Grid item xs={12} sm={6}>
-                                                <Typography variant="caption" color="text.secondary">Manager</Typography>
-                                                <Typography variant="body1" fontWeight="medium">
-                                                    {employees.find(e => e.id === selectedEmployee.managerId)?.name || 'Not assigned'}
-                                                </Typography>
-                                            </Grid>
-                                        </Grid>
-                                    </Grid>
-
-                                    {/* Status Information */}
-                                    <Grid item xs={12}>
-                                        <Typography variant="h6" gutterBottom fontWeight="bold" color="primary">
-                                            <CheckCircle sx={{ mr: 1, verticalAlign: 'middle' }} />
-                                            Current Status
-                                        </Typography>
-                                        <Divider sx={{ mb: 2 }} />
-                                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                            <Chip
-                                                icon={selectedEmployee.availability === 'Available' ? <CheckCircle /> : <Cancel />}
-                                                label={selectedEmployee.availability || 'Available'}
-                                                color={getAvailabilityColor(selectedEmployee.availability || 'Available')}
-                                            />
-                                            <Chip
-                                                label={getBillableLabel(selectedEmployee.billableStatus || 'Not Assigned')}
-                                                color={getBillableColor(selectedEmployee.billableStatus || 'Not Assigned')}
-                                            />
-                                        </Box>
-                                    </Grid>
-
-                                    {/* Current Projects */}
-                                    <Grid item xs={12}>
-                                        <Typography variant="h6" gutterBottom fontWeight="bold" color="primary">
-                                            <Work sx={{ mr: 1, verticalAlign: 'middle' }} />
-                                            Current Projects ({selectedEmployee.projectCount || 0})
-                                        </Typography>
-                                        <Divider sx={{ mb: 2 }} />
-                                        {selectedEmployee.allProjects && selectedEmployee.allProjects.length > 0 ? (
-                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                                                {selectedEmployee.allProjects.map((project) => (
-                                                    <Paper
-                                                        key={project.id}
-                                                        elevation={1}
-                                                        sx={{
-                                                            p: 2,
-                                                            bgcolor: 'primary.lighter',
-                                                            border: '1px solid',
-                                                            borderColor: 'primary.light',
-                                                        }}
-                                                    >
-                                                        <Typography variant="body1" fontWeight="bold" gutterBottom>
-                                                            {project.name}
-                                                        </Typography>
-                                                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                                            {project.description}
-                                                        </Typography>
-                                                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                                                            <Chip
-                                                                label={project.status}
-                                                                color="success"
-                                                                size="small"
-                                                            />
-                                                            {project.assignedEmployees?.find(a => a.employeeId === selectedEmployee.id)?.allocationType && (
-                                                                <Chip
-                                                                    label={getBillableLabel(
-                                                                        project.assignedEmployees.find(a => a.employeeId === selectedEmployee.id).allocationType
-                                                                    )}
-                                                                    color={getBillableColor(
-                                                                        project.assignedEmployees.find(a => a.employeeId === selectedEmployee.id).allocationType
-                                                                    )}
-                                                                    size="small"
-                                                                />
-                                                            )}
-                                                        </Box>
-                                                    </Paper>
-                                                ))}
-                                            </Box>
-                                        ) : (
-                                            <Typography variant="body2" color="text.secondary">
-                                                Not currently assigned to any projects
-                                            </Typography>
-                                        )}
-                                    </Grid>
-
-                                    {/* Skills */}
-                                    <Grid item xs={12}>
-                                        <Typography variant="h6" gutterBottom fontWeight="bold" color="primary">
-                                            <Code sx={{ mr: 1, verticalAlign: 'middle' }} />
-                                            Skills ({selectedEmployee.skills?.length || 0})
-                                        </Typography>
-                                        <Divider sx={{ mb: 2 }} />
-                                        {selectedEmployee.skills && selectedEmployee.skills.length > 0 ? (
-                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                                                {selectedEmployee.skills.map((skill) => (
-                                                    <Chip
-                                                        key={skill.id}
-                                                        label={`${getSkillName(skill.skillId)} - ${getProficiencyLabel(skill.proficiencyLevel)}`}
-                                                        variant="outlined"
-                                                        color="primary"
-                                                    />
-                                                ))}
-                                            </Box>
-                                        ) : (
-                                            <Typography variant="body2" color="text.secondary">
-                                                No skills added yet
-                                            </Typography>
-                                        )}
-                                    </Grid>
-                                </Grid>
-                            </DialogContent>
-
-                            <DialogActions sx={{ p: 2 }}>
-                                <Button onClick={() => setOpenEmployeeDetail(false)} variant="contained">
-                                    Close
-                                </Button>
-                            </DialogActions>
-                        </>
-                    )}
-                </Dialog>
-            </Paper>
-        </Container>
+                            )}
+                            <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Current projects</Typography>
+                            {detail.allProjects.length === 0 ? <Typography color="text.secondary">Not assigned</Typography>
+                                : detail.allProjects.map((p) => <Chip key={p.id} label={p.name} sx={{ mr: 0.5 }} />)}
+                        </DialogContent>
+                        <DialogActions><Button onClick={() => setDetail(null)}>Close</Button></DialogActions>
+                    </>
+                )}
+            </Dialog>
+        </Box>
     );
 };
 

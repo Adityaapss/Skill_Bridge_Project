@@ -1,3 +1,6 @@
+import { useUi } from '../context/UiContext';
+import { errorMessage } from '../utils/errors';
+import PageSkeleton from '../components/PageSkeleton';
 import React, { useState, useEffect } from 'react';
 import {
     Container,
@@ -19,7 +22,6 @@ import {
     DialogActions,
     TextField,
     MenuItem,
-    CircularProgress,
     Alert,
     Tabs,
     Tab,
@@ -28,10 +30,9 @@ import { Add, Edit, Delete, Category as CategoryIcon } from '@mui/icons-material
 import { skillsAPI } from '../services/api';
 
 const SkillCatalog = () => {
+    const { toast, confirm } = useUi();
     const [skills, setSkills] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
     const [openSkillDialog, setOpenSkillDialog] = useState(false);
     const [openCategoryDialog, setOpenCategoryDialog] = useState(false);
     const [editingSkill, setEditingSkill] = useState(null);
@@ -66,8 +67,8 @@ const SkillCatalog = () => {
                 technicalCategories.includes(skill.category)
             );
             setSkills(technicalSkills);
-        } catch (err) {
-            setError('Failed to load skills');
+        } catch {
+            toast.error('Failed to load skills');
         } finally {
             setLoading(false);
         }
@@ -95,40 +96,37 @@ const SkillCatalog = () => {
     const handleCloseSkillDialog = () => {
         setOpenSkillDialog(false);
         setEditingSkill(null);
-        setError('');
     };
 
     const handleSubmitSkill = async () => {
         try {
             if (!formData.name.trim()) {
-                setError('Skill name is required');
+                toast.error('Skill name is required');
                 return;
             }
 
             if (editingSkill) {
                 await skillsAPI.update(editingSkill.id, formData);
-                setSuccess('Skill updated successfully!');
+                toast.success('Skill updated successfully!');
             } else {
                 await skillsAPI.create(formData);
-                setSuccess('Skill added successfully!');
+                toast.success('Skill added successfully!');
             }
             fetchSkills();
             handleCloseSkillDialog();
-            setTimeout(() => setSuccess(''), 3000);
         } catch (err) {
-            setError(err.response?.data?.message || 'Failed to save skill');
+            toast.error(errorMessage(err, 'Failed to save skill'));
         }
     };
 
     const handleDeleteSkill = async (skillId, skillName) => {
-        if (window.confirm(`Are you sure you want to delete "${skillName}"? This action cannot be undone.`)) {
+        if (await confirm({ title: 'Please confirm', message: `Are you sure you want to delete "${skillName}"? This action cannot be undone.`, confirmText: 'Confirm', destructive: true })) {
             try {
                 await skillsAPI.delete(skillId);
-                setSuccess('Skill deleted successfully!');
+                toast.success('Skill deleted successfully!');
                 fetchSkills();
-                setTimeout(() => setSuccess(''), 3000);
-            } catch (err) {
-                setError('Failed to delete skill. It may be in use by employees.');
+            } catch {
+                toast.error('Failed to delete skill. It may be in use by employees.');
             }
         }
     };
@@ -138,23 +136,21 @@ const SkillCatalog = () => {
             const formattedCategory = newCategory.toUpperCase().replace(/\s+/g, '_');
             setCategories([...categories, formattedCategory]);
             setNewCategory('');
-            setSuccess('Category added successfully!');
-            setTimeout(() => setSuccess(''), 3000);
+            toast.success('Category added successfully!');
         }
     };
 
-    const handleDeleteCategory = (category) => {
+    const handleDeleteCategory = async (category) => {
         // Check if any skills use this category
         const skillsInCategory = skills.filter(skill => skill.category === category);
         if (skillsInCategory.length > 0) {
-            setError(`Cannot delete category "${category}". It has ${skillsInCategory.length} skill(s).`);
+            toast.error(`Cannot delete category "${category}". It has ${skillsInCategory.length} skill(s).`);
             return;
         }
 
-        if (window.confirm(`Are you sure you want to delete the category "${category}"?`)) {
+        if (await confirm({ title: 'Please confirm', message: `Are you sure you want to delete the category "${category}"?`, confirmText: 'Confirm', destructive: true })) {
             setCategories(categories.filter(cat => cat !== category));
-            setSuccess('Category deleted successfully!');
-            setTimeout(() => setSuccess(''), 3000);
+            toast.success('Category deleted successfully!');
         }
     };
 
@@ -176,11 +172,7 @@ const SkillCatalog = () => {
 
     if (loading) {
         return (
-            <Container>
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-                    <CircularProgress />
-                </Box>
-            </Container>
+            <PageSkeleton />
         );
     }
 
@@ -215,8 +207,6 @@ const SkillCatalog = () => {
                     </Box>
                 </Box>
 
-                {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
-                {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>{success}</Alert>}
 
                 {/* Category Tabs */}
                 <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
@@ -226,7 +216,7 @@ const SkillCatalog = () => {
                         variant="scrollable"
                         scrollButtons="auto"
                     >
-                        {categories.map((category, index) => (
+                        {categories.map((category) => (
                             <Tab
                                 key={category}
                                 label={

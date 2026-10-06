@@ -1,21 +1,28 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { authAPI } from '../services/api';
 
 const AuthContext = createContext(null);
 
+const readSession = () => {
+    try {
+        const token = localStorage.getItem('token');
+        const saved = localStorage.getItem('user');
+        return token && saved ? JSON.parse(saved) : null;
+    } catch {
+        localStorage.removeItem('user');
+        return null;
+    }
+};
+
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [user, setUser] = useState(readSession);
+    const loading = false;
 
     useEffect(() => {
-        // Check if user is logged in on mount
-        const token = localStorage.getItem('token');
-        const savedUser = localStorage.getItem('user');
-
-        if (token && savedUser) {
-            setUser(JSON.parse(savedUser));
-        }
-        setLoading(false);
+        // Re-validate the stored session; the API client clears it and redirects on a 401
+        if (user) authAPI.getCurrentUser().catch(() => { });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const login = async (email, password) => {

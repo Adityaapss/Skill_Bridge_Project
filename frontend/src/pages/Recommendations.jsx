@@ -37,7 +37,7 @@ const Recommendations = () => {
         try {
             const response = await rolesProjectsAPI.getAll(null, 'ACTIVE');
             setRolesProjects(response.data);
-        } catch (err) {
+        } catch {
             setError('Failed to load roles and projects');
         }
     };

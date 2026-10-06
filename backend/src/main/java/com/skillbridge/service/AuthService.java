@@ -98,4 +98,24 @@ public class AuthService {
     public Employee getCurrentUser(String email) {
         return userDetailsService.getEmployeeByEmail(email);
     }
+
+    /**
+     * Change the signed-in user's password after verifying the current one
+     */
+    @Transactional
+    public void changePassword(String email, String currentPassword, String newPassword) {
+        Employee employee = userDetailsService.getEmployeeByEmail(email);
+        if (!passwordEncoder.matches(currentPassword, employee.getPassword())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new IllegalArgumentException("New password must be at least 8 characters");
+        }
+        if (passwordEncoder.matches(newPassword, employee.getPassword())) {
+            throw new IllegalArgumentException("New password must differ from the current one");
+        }
+        employee.setPassword(passwordEncoder.encode(newPassword));
+        employeeRepository.save(employee);
+        log.info("Password changed for user: {}", email);
+    }
 }

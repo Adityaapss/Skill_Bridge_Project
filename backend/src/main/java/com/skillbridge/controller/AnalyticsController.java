@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,6 +21,7 @@ public class AnalyticsController {
     private final AnalyticsService analyticsService;
 
     @GetMapping("/employee/{employeeId}/gap")
+    @PreAuthorize("@access.canView(#employeeId)")
     @Operation(summary = "Get employee gap analysis", description = "Analyze skill gaps for an employee against a role/project")
     public ResponseEntity<GapAnalysisDTO> getEmployeeGapAnalysis(
             @PathVariable Long employeeId,
@@ -29,6 +31,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/employee/{employeeId}/recommendations")
+    @PreAuthorize("@access.canView(#employeeId)")
     @Operation(summary = "Get learning recommendations", description = "Get recommended learning resources for an employee")
     public ResponseEntity<List<RecommendationDTO>> getRecommendations(
             @PathVariable Long employeeId,

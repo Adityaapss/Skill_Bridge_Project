@@ -15,6 +15,8 @@ import java.util.List;
 /**
  * Data loader to seed initial data for development and testing
  */
+// Demo accounts use well-known passwords: set app.seed-data=false outside local development
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.seed-data", havingValue = "true", matchIfMissing = true)
 @Component
 @RequiredArgsConstructor
 @Slf4j

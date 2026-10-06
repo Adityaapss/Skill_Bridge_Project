@@ -36,6 +36,7 @@ public class EmployeeController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("@access.canView(#id)")
     @Operation(summary = "Get employee by ID", description = "Retrieve employee details by ID")
     public ResponseEntity<Employee> getEmployeeById(@PathVariable Long id) {
         Employee employee = employeeService.getEmployeeById(id);
@@ -105,6 +106,7 @@ public class EmployeeController {
     }
 
     @GetMapping("/{id}/dashboard")
+    @PreAuthorize("@access.canView(#id)")
     @Operation(summary = "Get employee dashboard", description = "Get employee dashboard data including skills and projects")
     public ResponseEntity<com.skillbridge.dto.EmployeeDashboardDTO> getDashboard(@PathVariable Long id) {
         com.skillbridge.dto.EmployeeDashboardDTO dashboard = employeeService.getEmployeeDashboard(id);

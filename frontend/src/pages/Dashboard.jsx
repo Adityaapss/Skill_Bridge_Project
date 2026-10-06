@@ -44,6 +44,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { skillsAPI, learningResourcesAPI, employeesAPI, projectsAPI } from '../services/api';
 import SkillApprovals from '../components/SkillApprovals';
+import PageSkeleton from '../components/PageSkeleton';
 
 const Dashboard = () => {
     const { user } = useAuth();
@@ -120,13 +121,7 @@ const Dashboard = () => {
     };
 
     if (loading) {
-        return (
-            <Container>
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-                    <CircularProgress />
-                </Box>
-            </Container>
-        );
+        return <PageSkeleton />;
     }
 
     // Employee Dashboard View
@@ -139,7 +134,7 @@ const Dashboard = () => {
                     sx={{
                         p: 4,
                         mb: 4,
-                        background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+                        background: (t) => `linear-gradient(135deg, ${t.palette.primary.main} 0%, ${t.palette.secondary.main} 100%)`,
                         color: 'white',
                     }}
                 >
@@ -192,7 +187,7 @@ const Dashboard = () => {
 
                 <Grid container spacing={3} sx={{ mb: 4 }}>
                     {/* Approved Skills Count */}
-                    <Grid item xs={12} sm={6} md={6}>
+                    <Grid size={{ xs: 12, sm: 6, md: 6 }}>
                         <Card
                             elevation={2}
                             sx={{
@@ -224,7 +219,7 @@ const Dashboard = () => {
                     </Grid>
 
                     {/* Active Projects Count */}
-                    <Grid item xs={12} sm={6} md={6}>
+                    <Grid size={{ xs: 12, sm: 6, md: 6 }}>
                         <Card
                             elevation={2}
                             sx={{
@@ -260,13 +255,13 @@ const Dashboard = () => {
                 {/* Project Details */}
                 {employeeDashboard?.assignedProjects && employeeDashboard.assignedProjects.length > 0 ? (
                     <>
-                        <Typography variant="h5" gutterBottom fontWeight="bold" color="primary.dark" sx={{ mb: 3 }}>
+                        <Typography variant="h5" gutterBottom fontWeight="bold" color="primary.main" sx={{ mb: 3 }}>
                             🚀 My Projects ({employeeDashboard.assignedProjects.length})
                         </Typography>
 
                         <Grid container spacing={3} sx={{ mb: 4 }}>
                             {employeeDashboard.assignedProjects.map((project) => (
-                                <Grid item xs={12} md={6} key={project.projectId}>
+                                <Grid key={project.projectId} size={{ xs: 12, md: 6 }}>
                                     <Card
                                         elevation={3}
                                         sx={{
@@ -281,7 +276,7 @@ const Dashboard = () => {
                                         <CardContent>
                                             {/* Project Header */}
                                             <Box sx={{ mb: 2 }}>
-                                                <Typography variant="h5" fontWeight="bold" color="primary.dark" gutterBottom>
+                                                <Typography variant="h5" fontWeight="bold" color="primary.main" gutterBottom>
                                                     {project.projectName}
                                                 </Typography>
                                                 <Chip
@@ -331,7 +326,7 @@ const Dashboard = () => {
                                             {project.teamMembers && project.teamMembers.length > 0 && (
                                                 <Box
                                                     sx={{
-                                                        bgcolor: 'grey.50',
+                                                        bgcolor: 'action.hover',
                                                         p: 2,
                                                         borderRadius: 1,
                                                         border: '1px solid',
@@ -373,7 +368,7 @@ const Dashboard = () => {
                         </Grid>
                     </>
                 ) : (
-                    <Paper elevation={2} sx={{ p: 6, textAlign: 'center', mb: 4, bgcolor: 'grey.50' }}>
+                    <Paper elevation={2} sx={{ p: 6, textAlign: 'center', mb: 4, bgcolor: 'action.hover' }}>
                         <Typography variant="h6" color="text.secondary" gutterBottom>
                             No Active Projects
                         </Typography>
@@ -450,7 +445,7 @@ const Dashboard = () => {
                 sx={{
                     p: 4,
                     mb: 4,
-                    background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+                    background: (t) => `linear-gradient(135deg, ${t.palette.primary.main} 0%, ${t.palette.secondary.main} 100%)`,
                     color: 'white',
                 }}
             >
@@ -505,7 +500,7 @@ const Dashboard = () => {
 
             <Grid container spacing={3} sx={{ mb: 4 }}>
                 {quickStats.map((stat, index) => (
-                    <Grid item xs={12} sm={6} md={3} key={index}>
+                    <Grid key={index} size={{ xs: 12, sm: 6, md: 3 }}>
                         <Card
                             elevation={2}
                             sx={{
@@ -541,20 +536,20 @@ const Dashboard = () => {
             {/* Skill Approval Requests - Only for Manager and HR */}
             {(user.role === 'MANAGER' || user.role === 'HR_ADMIN') && (
                 <Box sx={{ mb: 4 }}>
-                    <SkillApprovals managerId={user.id} />
+                    <SkillApprovals />
                 </Box>
             )}
 
             {/* My Projects - Only for Manager */}
             {user.role === 'MANAGER' && employeeDashboard?.assignedProjects && employeeDashboard.assignedProjects.length > 0 && (
                 <>
-                    <Typography variant="h5" gutterBottom fontWeight="bold" color="primary.dark" sx={{ mb: 3 }}>
+                    <Typography variant="h5" gutterBottom fontWeight="bold" color="primary.main" sx={{ mb: 3 }}>
                         🚀 My Projects ({employeeDashboard.assignedProjects.length})
                     </Typography>
 
                     <Grid container spacing={3} sx={{ mb: 4 }}>
                         {employeeDashboard.assignedProjects.map((project) => (
-                            <Grid item xs={12} md={6} key={project.projectId}>
+                            <Grid key={project.projectId} size={{ xs: 12, md: 6 }}>
                                 <Card
                                     elevation={3}
                                     sx={{
@@ -569,7 +564,7 @@ const Dashboard = () => {
                                     <CardContent>
                                         {/* Project Header */}
                                         <Box sx={{ mb: 2 }}>
-                                            <Typography variant="h5" fontWeight="bold" color="primary.dark" gutterBottom>
+                                            <Typography variant="h5" fontWeight="bold" color="primary.main" gutterBottom>
                                                 {project.projectName}
                                             </Typography>
                                             <Chip
@@ -619,7 +614,7 @@ const Dashboard = () => {
                                         {project.teamMembers && project.teamMembers.length > 0 && (
                                             <Box
                                                 sx={{
-                                                    bgcolor: 'grey.50',
+                                                    bgcolor: 'action.hover',
                                                     p: 2,
                                                     borderRadius: 1,
                                                     border: '1px solid',

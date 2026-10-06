@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useUi } from '../context/UiContext';
+import { errorMessage } from '../utils/errors';
+import PageSkeleton from '../components/PageSkeleton';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Container,
     Paper,
@@ -22,6 +25,10 @@ import {
     MenuItem,
     Grid,
     Autocomplete,
+    TablePagination,
+    InputAdornment,
+    Tooltip,
+    DialogContentText,
 } from '@mui/material';
 import {
     Add,
@@ -32,8 +39,13 @@ import {
     Work,
 } from '@mui/icons-material';
 import { employeesAPI } from '../services/api';
+import PageHeader from '../components/PageHeader';
+import EmptyState from '../components/EmptyState';
+import useTablePagination from '../hooks/useTablePagination';
+import { downloadBlob } from '../utils/download';
 
 const EmployeeManagement = () => {
+    const { toast, confirm } = useUi();
     const [employees, setEmployees] = useState([]);
     const [managers, setManagers] = useState([]); // List of managers and HR for selection
     const [departments, setDepartments] = useState([]); // List of unique departments
@@ -48,13 +60,7 @@ const EmployeeManagement = () => {
         jobTitle: '',
         managerId: '', // Added managerId
     });
-    const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
 
-    useEffect(() => {
-        fetchEmployees();
-        fetchManagers();
-    }, []);
 
     const fetchEmployees = async () => {
         try {
@@ -70,7 +76,7 @@ const EmployeeManagement = () => {
             setDepartments(uniqueDepartments);
         } catch (err) {
             console.error('Failed to fetch employees:', err);
-            setError('Failed to load employees');
+            toast.error('Failed to load employees');
         }
     };
 
@@ -86,6 +92,12 @@ const EmployeeManagement = () => {
             console.error('Failed to fetch managers:', err);
         }
     };
+
+    useEffect(() => {
+        fetchEmployees();
+        fetchManagers();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleOpenDialog = (employee = null) => {
         if (employee) {
@@ -112,8 +124,6 @@ const EmployeeManagement = () => {
             });
         }
         setOpenDialog(true);
-        setError('');
-        setSuccess('');
     };
 
     const handleCloseDialog = () => {
@@ -128,29 +138,28 @@ const EmployeeManagement = () => {
             jobTitle: '',
             managerId: '',
         });
-        setError('');
     };
 
     const handleSaveEmployee = async () => {
         // Validation
         if (!formData.name || !formData.email || (!editingEmployee && !formData.password)) {
-            setError('Please fill in all required fields');
+            toast.error('Please fill in all required fields');
             return;
         }
 
         if (!formData.email.includes('@')) {
-            setError('Please enter a valid email address');
+            toast.error('Please enter a valid email address');
             return;
         }
 
-        if (!editingEmployee && formData.password.length < 6) {
-            setError('Password must be at least 6 characters');
+        if (!editingEmployee && formData.password.length < 8) {
+            toast.error('Password must be at least 8 characters');
             return;
         }
 
         // Validate manager selection for EMPLOYEE and MANAGER roles
         if ((formData.role === 'EMPLOYEE' || formData.role === 'MANAGER') && !formData.managerId) {
-            setError('Please select a manager for this employee');
+            toast.error('Please select a manager for this employee');
             return;
         }
 
@@ -165,38 +174,35 @@ const EmployeeManagement = () => {
             if (editingEmployee) {
                 // Update employee
                 await employeesAPI.update(editingEmployee.id, dataToSend);
-                setSuccess('Employee updated successfully!');
+                toast.success('Employee updated successfully!');
                 fetchEmployees(); // Refresh list
             } else {
                 // Create new employee
                 await employeesAPI.create(dataToSend);
-                setSuccess('Employee added successfully!');
+                toast.success('Employee added successfully!');
                 fetchEmployees(); // Refresh list
                 fetchManagers(); // Refresh managers list (in case we added a new manager)
             }
 
             setTimeout(() => {
                 handleCloseDialog();
-                setSuccess('');
             }, 2000);
         } catch (err) {
-            setError(err.response?.data?.message || 'Failed to save employee');
+            toast.error(errorMessage(err, 'Failed to save employee'));
         }
     };
 
     const handleDeleteEmployee = async (id) => {
-        if (!window.confirm('Are you sure you want to delete this employee?')) {
+        if (!(await confirm({ title: 'Please confirm', message: 'Are you sure you want to delete this employee?', confirmText: 'Confirm', destructive: true }))) {
             return;
         }
 
         try {
             await employeesAPI.delete(id);
             setEmployees(employees.filter(emp => emp.id !== id));
-            setSuccess('Employee deleted successfully!');
-            setTimeout(() => setSuccess(''), 3000);
-        } catch (err) {
-            setError('Failed to delete employee');
-            setTimeout(() => setError(''), 3000);
+            toast.success('Employee deleted successfully!');
+        } catch {
+            toast.error('Failed to delete employee');
         }
     };
 
@@ -222,34 +228,68 @@ const EmployeeManagement = () => {
         return manager ? manager.name : 'N/A';
     };
 
+    const [query, setQuery] = useState('');
+    const [roleFilter, setRoleFilter] = useState('ALL');
+    const [importResult, setImportResult] = useState(null);
+    const [importing, setImporting] = useState(false);
+    const fileInput = useRef(null);
+
+    const visible = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        return employees.filter((e) =>
+            (roleFilter === 'ALL' || e.role === roleFilter) &&
+            (!q || [e.name, e.email, e.jobTitle, e.department].some((v) => v && v.toLowerCase().includes(q))));
+    }, [employees, query, roleFilter]);
+    const paging = useTablePagination(visible, 10);
+
+    const handleImport = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        setImporting(true);
+        try {
+            const { data } = await employeesAPI.importCsv(file);
+            setImportResult(data);
+            if (data.created > 0) fetchEmployees();
+        } catch (err) {
+            toast.error(errorMessage(err, 'Import failed'));
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    const downloadTemplate = () => downloadBlob(
+        new Blob(['name,email,role,jobTitle,department,managerEmail,password\nJane Doe,jane.doe@example.com,EMPLOYEE,Developer,Engineering,manager@skillbridge.com,ChangeMe123\n'], { type: 'text/csv' }),
+        'employee-import-template.csv');
+
     // Check if manager selection should be shown
     const shouldShowManagerSelection = formData.role === 'EMPLOYEE' || formData.role === 'MANAGER';
 
     return (
         <Container maxWidth="lg">
-            <Paper sx={{ p: 3, mb: 3 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                    <Box>
-                        <Typography variant="h4" gutterBottom fontWeight="bold" color="primary">
-                            👥 Employee Management
-                        </Typography>
-                        <Typography variant="body1" color="text.secondary">
-                            Add, edit, and manage employee accounts
-                        </Typography>
-                    </Box>
-                    <Button
-                        variant="contained"
-                        startIcon={<Add />}
-                        onClick={() => handleOpenDialog()}
-                        size="large"
-                    >
-                        Add Employee
-                    </Button>
+            <PageHeader
+                title="Employee management"
+                subtitle="Add, edit and import employee accounts"
+                actions={<>
+                    <Tooltip title="CSV columns: name, email, role, jobTitle, department, managerEmail, password">
+                        <Button variant="outlined" onClick={downloadTemplate}>CSV template</Button>
+                    </Tooltip>
+                    <Button variant="outlined" onClick={() => fileInput.current?.click()} disabled={importing}>{importing ? 'Importing…' : 'Import CSV'}</Button>
+                    <input ref={fileInput} type="file" accept=".csv,text/csv" hidden onChange={handleImport} />
+                    <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>Add employee</Button>
+                </>}
+            />
+            <Paper sx={{ mb: 3 }}>
+                <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                    <TextField size="small" placeholder="Search name, email, title, department" value={query}
+                        onChange={(e) => setQuery(e.target.value)} sx={{ minWidth: 300 }} inputProps={{ 'aria-label': 'Search employees' }} />
+                    <TextField select size="small" label="Role" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} sx={{ minWidth: 160 }}>
+                        <MenuItem value="ALL">All roles</MenuItem>
+                        <MenuItem value="EMPLOYEE">Employee</MenuItem>
+                        <MenuItem value="MANAGER">Manager</MenuItem>
+                        <MenuItem value="HR_ADMIN">HR Admin</MenuItem>
+                    </TextField>
                 </Box>
-
-                {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
-                {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>{success}</Alert>}
-
                 <TableContainer>
                     <Table>
                         <TableHead>
@@ -264,16 +304,17 @@ const EmployeeManagement = () => {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {employees.length === 0 ? (
+                            {visible.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={7} align="center">
-                                        <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
-                                            No employees found. Click "Add Employee" to get started.
-                                        </Typography>
+                                        <EmptyState
+                                            title={employees.length === 0 ? 'No employees yet' : 'No employees match'}
+                                            message={employees.length === 0 ? 'Add one, or import a CSV.' : 'Try a different search or role.'}
+                                        />
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                employees.map((employee) => (
+                                paging.pageRows.map((employee) => (
                                     <TableRow key={employee.id} hover>
                                         <TableCell>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -331,7 +372,23 @@ const EmployeeManagement = () => {
                         </TableBody>
                     </Table>
                 </TableContainer>
+                <TablePagination {...paging.props} />
             </Paper>
+
+            <Dialog open={Boolean(importResult)} onClose={() => setImportResult(null)} fullWidth maxWidth="sm">
+                <DialogTitle>Import finished</DialogTitle>
+                <DialogContent>
+                    <DialogContentText sx={{ mb: 1 }}>
+                        <strong>{importResult?.created}</strong> created, <strong>{importResult?.skipped}</strong> skipped.
+                    </DialogContentText>
+                    {importResult?.errors?.length > 0 && (
+                        <Alert severity="warning" sx={{ maxHeight: 220, overflow: 'auto' }}>
+                            {importResult.errors.map((m) => <div key={m}>{m}</div>)}
+                        </Alert>
+                    )}
+                </DialogContent>
+                <DialogActions><Button onClick={() => setImportResult(null)}>Done</Button></DialogActions>
+            </Dialog>
 
             {/* Add/Edit Employee Dialog */}
             <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
@@ -341,7 +398,7 @@ const EmployeeManagement = () => {
                 <DialogContent>
                     <Box sx={{ pt: 2 }}>
                         <Grid container spacing={2}>
-                            <Grid item xs={12}>
+                            <Grid size={{ xs: 12 }}>
                                 <TextField
                                     fullWidth
                                     label="Full Name"
@@ -350,7 +407,7 @@ const EmployeeManagement = () => {
                                     required
                                 />
                             </Grid>
-                            <Grid item xs={12}>
+                            <Grid size={{ xs: 12 }}>
                                 <TextField
                                     fullWidth
                                     label="Email"
@@ -361,7 +418,7 @@ const EmployeeManagement = () => {
                                 />
                             </Grid>
                             {!editingEmployee && (
-                                <Grid item xs={12}>
+                                <Grid size={{ xs: 12 }}>
                                     <TextField
                                         fullWidth
                                         label="Password"
@@ -373,7 +430,7 @@ const EmployeeManagement = () => {
                                     />
                                 </Grid>
                             )}
-                            <Grid item xs={12}>
+                            <Grid size={{ xs: 12 }}>
                                 <TextField
                                     select
                                     fullWidth
@@ -390,7 +447,7 @@ const EmployeeManagement = () => {
 
                             {/* Conditional Manager Selection */}
                             {shouldShowManagerSelection && (
-                                <Grid item xs={12}>
+                                <Grid size={{ xs: 12 }}>
                                     <TextField
                                         select
                                         fullWidth
@@ -418,14 +475,14 @@ const EmployeeManagement = () => {
                             )}
 
                             {formData.role === 'HR_ADMIN' && (
-                                <Grid item xs={12}>
+                                <Grid size={{ xs: 12 }}>
                                     <Alert severity="info">
                                         HR Admins are top-level and don't report to anyone.
                                     </Alert>
                                 </Grid>
                             )}
 
-                            <Grid item xs={12}>
+                            <Grid size={{ xs: 12 }}>
                                 <Autocomplete
                                     freeSolo
                                     options={departments}
@@ -447,7 +504,7 @@ const EmployeeManagement = () => {
                                 />
                             </Grid>
 
-                            <Grid item xs={12}>
+                            <Grid size={{ xs: 12 }}>
                                 <TextField
                                     fullWidth
                                     label="Job Title"
@@ -459,8 +516,6 @@ const EmployeeManagement = () => {
                             </Grid>
                         </Grid>
 
-                        {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
-                        {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
                     </Box>
                 </DialogContent>
                 <DialogActions>

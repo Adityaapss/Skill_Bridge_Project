@@ -23,23 +23,25 @@ import {
 } from '@mui/material';
 import { CheckCircle, Cancel, Info } from '@mui/icons-material';
 import { employeeSkillsAPI } from '../services/api';
+import { useUi } from '../context/UiContext';
+import { errorMessage } from '../utils/errors';
 
-const SkillApprovals = ({ managerId }) => {
+const SkillApprovals = () => {
+    const { toast } = useUi();
     const [pendingSkills, setPendingSkills] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
     const [rejectDialog, setRejectDialog] = useState({ open: false, skill: null });
     const [rejectionReason, setRejectionReason] = useState('');
 
     useEffect(() => {
         fetchPendingSkills();
-    }, [managerId]);
+    }, []);
 
     const fetchPendingSkills = async () => {
         try {
             setLoading(true);
-            const response = await employeeSkillsAPI.getPendingForManager(managerId);
+            const response = await employeeSkillsAPI.getPendingForManager();
             setPendingSkills(response.data);
             setError('');
         } catch (err) {
@@ -52,12 +54,11 @@ const SkillApprovals = ({ managerId }) => {
 
     const handleApprove = async (skillId) => {
         try {
-            await employeeSkillsAPI.approve(skillId, managerId);
-            setSuccess('Skill approved successfully!');
+            await employeeSkillsAPI.approve(skillId);
+            toast.success('Skill approved');
             fetchPendingSkills();
-            setTimeout(() => setSuccess(''), 3000);
         } catch (err) {
-            setError('Failed to approve skill');
+            toast.error(errorMessage(err, 'Failed to approve skill'));
         }
     };
 
@@ -73,18 +74,17 @@ const SkillApprovals = ({ managerId }) => {
 
     const handleReject = async () => {
         if (!rejectionReason.trim()) {
-            setError('Please provide a reason for rejection');
+            toast.warning('Please provide a reason for rejection');
             return;
         }
 
         try {
-            await employeeSkillsAPI.reject(rejectDialog.skill.id, managerId, rejectionReason);
-            setSuccess('Skill rejected');
+            await employeeSkillsAPI.reject(rejectDialog.skill.id, rejectionReason);
+            toast.success('Skill rejected');
             handleCloseRejectDialog();
             fetchPendingSkills();
-            setTimeout(() => setSuccess(''), 3000);
         } catch (err) {
-            setError('Failed to reject skill');
+            toast.error(errorMessage(err, 'Failed to reject skill'));
         }
     };
 
@@ -118,7 +118,6 @@ const SkillApprovals = ({ managerId }) => {
             </Box>
 
             {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
-            {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>{success}</Alert>}
 
             {pendingSkills.length === 0 ? (
                 <Alert severity="info">

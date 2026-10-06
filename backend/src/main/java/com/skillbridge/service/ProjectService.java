@@ -26,6 +26,7 @@ public class ProjectService {
     private final ProjectRepository projectRepository;
     private final ProjectAssignmentRepository assignmentRepository;
     private final EmployeeRepository employeeRepository;
+    private final NotificationService notificationService;
 
     /**
      * Get all active projects
@@ -143,12 +144,19 @@ public class ProjectService {
     @Transactional
     public void assignEmployee(Long projectId, Long employeeId, ProjectAssignment.AllocationType allocationType) {
         // Verify project exists
-        projectRepository.findById(projectId)
+        Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("Project not found with id: " + projectId));
 
         // Verify employee exists
         employeeRepository.findById(employeeId)
                 .orElseThrow(() -> new RuntimeException("Employee not found with id: " + employeeId));
+
+        // Already on the project: nothing to do (avoids duplicate active assignments)
+        boolean alreadyAssigned = assignmentRepository.findByProjectIdAndActiveTrue(projectId).stream()
+                .anyMatch(a -> a.getEmployeeId().equals(employeeId));
+        if (alreadyAssigned) {
+            return;
+        }
 
         // Create assignment
         ProjectAssignment assignment = new ProjectAssignment();
@@ -159,6 +167,8 @@ public class ProjectService {
         assignment.setAllocationType(allocationType);
 
         assignmentRepository.save(assignment);
+        notificationService.notify(employeeId, com.skillbridge.entity.Notification.Type.PROJECT_ASSIGNED,
+                "You have been assigned to " + project.getName(), "/dashboard");
     }
 
     /**

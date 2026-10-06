@@ -1,4 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useUi } from '../context/UiContext';
+import { errorMessage } from '../utils/errors';
+import PageSkeleton from '../components/PageSkeleton';
+import React, { useState, useEffect, useMemo } from 'react';
+import PageHeader from '../components/PageHeader';
+import EmptyState from '../components/EmptyState';
+import useTablePagination from '../hooks/useTablePagination';
 import {
     Container,
     Paper,
@@ -19,20 +25,20 @@ import {
     DialogActions,
     TextField,
     MenuItem,
-    CircularProgress,
     Alert,
     Link,
     FormControlLabel,
     Checkbox,
+    TablePagination,
 } from '@mui/material';
 import { Add, Edit, Delete, OpenInNew } from '@mui/icons-material';
 import { learningResourcesAPI, skillsAPI } from '../services/api';
 
 const LearningResources = () => {
+    const { toast, confirm } = useUi();
     const [resources, setResources] = useState([]);
     const [skills, setSkills] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
     const [openDialog, setOpenDialog] = useState(false);
     const [editingResource, setEditingResource] = useState(null);
     const [formData, setFormData] = useState({
@@ -58,8 +64,8 @@ const LearningResources = () => {
             ]);
             setResources(resourcesResponse.data);
             setSkills(skillsResponse.data);
-        } catch (err) {
-            setError('Failed to load data');
+        } catch {
+            toast.error('Failed to load data');
         } finally {
             setLoading(false);
         }
@@ -109,49 +115,57 @@ const LearningResources = () => {
             fetchData();
             handleCloseDialog();
         } catch (err) {
-            setError(err.response?.data?.message || 'Failed to save resource');
+            toast.error(errorMessage(err, 'Failed to save resource'));
         }
     };
 
     const handleDelete = async (id) => {
-        if (window.confirm('Are you sure you want to delete this resource?')) {
+        if (await confirm({ title: 'Please confirm', message: 'Are you sure you want to delete this resource?', confirmText: 'Confirm', destructive: true })) {
             try {
                 await learningResourcesAPI.delete(id);
                 fetchData();
-            } catch (err) {
-                setError('Failed to delete resource');
+            } catch {
+                toast.error('Failed to delete resource');
             }
         }
     };
+
+    const [query, setQuery] = useState('');
+    const [levelFilter, setLevelFilter] = useState('ALL');
+    const visible = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        return resources.filter((r) =>
+            (levelFilter === 'ALL' || r.level === levelFilter) &&
+            (!q || r.title.toLowerCase().includes(q) || (r.skillName || '').toLowerCase().includes(q)));
+    }, [resources, query, levelFilter]);
+    const paging = useTablePagination(visible, 10);
 
     const types = ['COURSE', 'BOOK', 'VIDEO', 'ARTICLE', 'CERTIFICATION', 'WORKSHOP', 'OTHER'];
     const levels = ['BEGINNER', 'INTERMEDIATE', 'ADVANCED'];
 
     if (loading) {
         return (
-            <Container>
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-                    <CircularProgress />
-                </Box>
-            </Container>
+            <PageSkeleton />
         );
     }
 
     return (
         <Container maxWidth="xl">
-            <Paper sx={{ p: 3 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                    <Typography variant="h5">Learning Resources</Typography>
-                    <Button
-                        variant="contained"
-                        startIcon={<Add />}
-                        onClick={() => handleOpenDialog()}
-                    >
-                        Add Resource
-                    </Button>
+            <PageHeader
+                title="Learning resources"
+                subtitle="Courses, books and videos recommended to close skill gaps"
+                actions={<Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>Add resource</Button>}
+            />
+            <Paper>
+                <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                    <TextField size="small" placeholder="Search title or skill" value={query}
+                        onChange={(e) => setQuery(e.target.value)} sx={{ minWidth: 260 }} inputProps={{ 'aria-label': 'Search resources' }} />
+                    <TextField select size="small" label="Level" value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} sx={{ minWidth: 160 }}>
+                        <MenuItem value="ALL">All levels</MenuItem>
+                        {levels.map((l) => <MenuItem key={l} value={l}>{l.charAt(0) + l.slice(1).toLowerCase()}</MenuItem>)}
+                    </TextField>
                 </Box>
 
-                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
                 <TableContainer>
                     <Table>
@@ -168,14 +182,17 @@ const LearningResources = () => {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {resources.length === 0 ? (
+                            {visible.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={8} align="center">
-                                        No learning resources yet. Click "Add Resource" to create one!
+                                        <EmptyState
+                                            title={resources.length === 0 ? 'No learning resources yet' : 'No resources match'}
+                                            message={resources.length === 0 ? 'Add the first one to start recommending learning.' : 'Try a different search or level.'}
+                                        />
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                resources.map((resource) => (
+                                paging.pageRows.map((resource) => (
                                     <TableRow key={resource.id}>
                                         <TableCell>{resource.title}</TableCell>
                                         <TableCell>{resource.skillName}</TableCell>
@@ -201,17 +218,17 @@ const LearningResources = () => {
                                             />
                                         </TableCell>
                                         <TableCell>
-                                            <Link href={resource.url} target="_blank" rel="noopener">
-                                                <IconButton size="small">
+                                            <Link href={resource.url} target="_blank" rel="noopener noreferrer">
+                                                <IconButton size="small" aria-label={`Open ${resource.title}`}>
                                                     <OpenInNew fontSize="small" />
                                                 </IconButton>
                                             </Link>
                                         </TableCell>
                                         <TableCell>
-                                            <IconButton size="small" onClick={() => handleOpenDialog(resource)}>
+                                            <IconButton size="small" aria-label={`Edit ${resource.title}`} onClick={() => handleOpenDialog(resource)}>
                                                 <Edit />
                                             </IconButton>
-                                            <IconButton size="small" onClick={() => handleDelete(resource.id)}>
+                                            <IconButton size="small" color="error" aria-label={`Delete ${resource.title}`} onClick={() => handleDelete(resource.id)}>
                                                 <Delete />
                                             </IconButton>
                                         </TableCell>
@@ -221,6 +238,7 @@ const LearningResources = () => {
                         </TableBody>
                     </Table>
                 </TableContainer>
+                <TablePagination {...paging.props} />
             </Paper>
 
             <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
